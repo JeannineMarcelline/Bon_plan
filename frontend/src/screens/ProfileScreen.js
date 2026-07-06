@@ -10,10 +10,12 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 
-export default function ProfileScreen() {
+export default function ProfileScreen() {  // ← navigation retiré
   const { user, logout } = useAuth();
-
+   const navigation = useNavigation();
+   
   const handleLogout = () => {
     Alert.alert(
       'Déconnexion',
@@ -31,7 +33,6 @@ export default function ProfileScreen() {
     );
   };
 
-  // Rôle affiché
   const getRoleLabel = (role) => {
     if (role === 'pro') return '🏢 Professionnel';
     if (role === 'admin') return '🔐 Administrateur';
@@ -41,12 +42,10 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* En-tête */}
         <View style={styles.header}>
           <Text style={styles.title}>👤 Mon profil</Text>
         </View>
 
-        {/* Carte des infos */}
         <View style={styles.card}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
@@ -91,13 +90,29 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Bouton Ajouter une entreprise (seulement pour les Pro) */}
+        {user?.role === 'pro' && (
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => {
+              // Navigation vers l'onglet Accueil puis AddCompany
+              // Utilise le chemin complet
+              navigation.navigate('Accueil', {
+                screen: 'AddCompany',
+              });
+            }}
+          >
+            <Ionicons name="add-circle-outline" size={22} color="#fff" />
+            <Text style={styles.addButtonText}>Ajouter une entreprise</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Bouton Déconnexion */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={22} color="#fff" />
           <Text style={styles.logoutButtonText}>Se déconnecter</Text>
         </TouchableOpacity>
 
-        {/* Version de l'app */}
         <Text style={styles.version}>Bon Plan Madagascar v1.0</Text>
       </ScrollView>
     </SafeAreaView>
@@ -168,6 +183,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#2c3e50',
     fontWeight: '500',
+  },
+  addButton: {
+    backgroundColor: '#28a745',
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  addButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
   },
   logoutButton: {
     backgroundColor: '#e74c3c',

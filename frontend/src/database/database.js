@@ -52,6 +52,41 @@ export const initDatabase = async () => {
       );
     `);
     console.log('✅ Base de données initialisée');
+
+    // ===== AJOUT DES DONNÉES DE TEST =====
+    
+    // 1. Villes par défaut
+    await db.runAsync(`
+      INSERT OR IGNORE INTO villes (nom, region) VALUES 
+        ('Antananarivo', 'Analamanga'),
+        ('Fianarantsoa', 'Haute Matsiatra'),
+        ('Toamasina', 'Atsinanana'),
+        ('Mahajanga', 'Boeny'),
+        ('Antsiranana', 'Diana'),
+        ('Toliara', 'Atsimo-Andrefana')
+    `);
+
+    // 3. Admin par défaut
+  await db.runAsync(`
+  INSERT OR IGNORE INTO utilisateurs (nom, email, motDePasse, telephone, role)
+  VALUES ('Admin', 'admin@bonplan.mg', 'admin123', '034 00 00 00', 'admin')
+`); 
+
+
+    // 2. Catégories par défaut
+    await db.runAsync(`
+      INSERT OR IGNORE INTO categories (nom, description, icone) VALUES 
+        ('Hôtels', 'Établissements d\'hébergement', '🏨'),
+        ('Restaurants', 'Établissements de restauration', '🍽️'),
+        ('Cybercafés', 'Services internet et informatique', '💻'),
+        ('Artisans', 'Artisanat et créations locales', '🎨'),
+        ('Agriculture', 'Produits agricoles et fermes', '🌾'),
+        ('Services', 'Services divers', '🔧')
+    `);
+
+    console.log('✅ Données de test insérées');
+    // ===== FIN DES DONNÉES DE TEST =====
+
   } catch (error) {
     console.error('❌ Erreur:', error);
   }

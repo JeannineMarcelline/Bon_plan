@@ -1,5 +1,6 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,11 @@ import RegisterScreen from '../screens/RegisterScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
 import BookingsScreen2 from '../screens/BookingScreen2';
 import ProfileScreen from '../screens/ProfileScreen';
+import AddCompanyScreen from '../screens/AddCompanyScreen';
+import AdminScreen from '../screens/AdminScreen';
+import AdminVillesScreen from '../screens/AdminVillesScreen';
+import AdminCategorie from '../screens/AdminCategorie'
+
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -25,12 +31,24 @@ function HomeStack() {
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Company" component={CompanyScreen} />
       <Stack.Screen name="Booking" component={BookingScreen} />
+      <Stack.Screen name="AddCompany" component={AddCompanyScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function AdminStack() {
+  return(
+    <Stack.Navigator screenOptions={{ headerShown: false}}>
+      <Stack.Screen name="AdminDashbord" component={AdminScreen} />
+      <Stack.Screen name="AdminVilles" component={AdminVillesScreen} />
+      <Stack.Screen name="AdminCategorie" component={AdminCategorie} />
     </Stack.Navigator>
   );
 }
 
 // Tabs pour l'application principale
 function MainTabs() {
+   const { user } = useAuth();
   return (
      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
     <Tab.Navigator
@@ -68,6 +86,8 @@ function MainTabs() {
       <Tab.Screen name="Réservations" component={BookingsScreen2} />
       <Tab.Screen name="Favoris" component={FavoritesScreen} />
       <Tab.Screen name="Profil" component={ProfileScreen} />
+      <Tab.Screen name="Admin" component={AdminStack} />
+
     </Tab.Navigator>
     </SafeAreaView>
   );
