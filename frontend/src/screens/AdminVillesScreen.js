@@ -129,7 +129,7 @@ const openAddModal = () => {
 
 const openEditModal = (item) => {
     setModalMode('edit');
-    setNom(item.nom);
+    setNom(item.nom || '');
     setRegion(item.region || '');
     setSelectedId(item.id);
     setModalVisible(true);

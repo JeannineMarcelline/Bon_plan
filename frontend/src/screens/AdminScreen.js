@@ -141,7 +141,7 @@ export default function AdminScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => navigation.navigate('AdminUtilisateurs')}
+            onPress={() => navigation.navigate('AdminUser')}
           >
             <Ionicons name="people-outline" size={24} color="#17a2b8" />
             <Text style={styles.menuItemText}>Gérer les utilisateurs</Text>

@@ -16,7 +16,7 @@ export const initDatabase = async () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nom TEXT NOT NULL UNIQUE,
         description TEXT,
-        icone TEXT
+       
       );
 
       CREATE TABLE IF NOT EXISTS utilisateurs (

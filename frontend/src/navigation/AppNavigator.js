@@ -18,7 +18,8 @@ import ProfileScreen from '../screens/ProfileScreen';
 import AddCompanyScreen from '../screens/AddCompanyScreen';
 import AdminScreen from '../screens/AdminScreen';
 import AdminVillesScreen from '../screens/AdminVillesScreen';
-import AdminCategorie from '../screens/AdminCategorie'
+import AdminCategorie from '../screens/AdminCategorie';
+import AdminUserScreen from '../screens/AdminUserScreen';
 
 
 const Stack = createStackNavigator();
@@ -42,6 +43,8 @@ function AdminStack() {
       <Stack.Screen name="AdminDashbord" component={AdminScreen} />
       <Stack.Screen name="AdminVilles" component={AdminVillesScreen} />
       <Stack.Screen name="AdminCategorie" component={AdminCategorie} />
+      <Stack.Screen name="AdminUser" component={AdminUserScreen} />
+
     </Stack.Navigator>
   );
 }
