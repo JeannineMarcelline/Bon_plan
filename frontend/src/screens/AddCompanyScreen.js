@@ -97,18 +97,19 @@ export default function AddCompanyScreen({navigation}){
     setLoading(true);
     try{
     const result = await db.runAsync(
-     `INSERT INTO entreprise (nom, description, adresse, telephone, siteweb, logo, 
-     ville_id, categorie_id, utilisateur_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     `INSERT INTO entreprises (nom, description, adresse, telephone, siteweb, logo, 
+     ville_id, categorie_id, utilisateur_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
      [
         nom,
         description || '',
         adresse,
         telephone,
-        siteWeb || '',
+        siteweb || '',
         logo || '',
         villeId,
         categorieId,
-         user.id,
+        user.id,
+      'en_attente' 
      ]
     );
     Alert.alert(

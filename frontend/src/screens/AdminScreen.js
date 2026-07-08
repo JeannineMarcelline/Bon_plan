@@ -51,7 +51,7 @@ export default function AdminScreen({ navigation }) {
   }, []);
 
   // ===== VÉRIFIER QUE L'UTILISATEUR EST ADMIN =====
- {/** if (user?.role !== 'admin') {
+  if (user?.role !== 'admin') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
@@ -70,7 +70,7 @@ export default function AdminScreen({ navigation }) {
       </SafeAreaView>
     );
   }
- */}
+ 
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>

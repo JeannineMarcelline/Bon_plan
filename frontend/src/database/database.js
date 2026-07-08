@@ -1,9 +1,20 @@
 import * as SQLite from 'expo-sqlite';
+import * as Crypto from 'expo-crypto';
 
 // Ouvrir la base de données (synchrone)
 const db = SQLite.openDatabaseSync('bonplan.db');
 
+const hashPassword = async (password) => {
+  const hashed = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    password
+  );
+  return hashed;
+};
+
+
 export const initDatabase = async () => {
+
   try {
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS villes (
@@ -15,8 +26,7 @@ export const initDatabase = async () => {
       CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nom TEXT NOT NULL UNIQUE,
-        description TEXT,
-       
+        description TEXT
       );
 
       CREATE TABLE IF NOT EXISTS utilisateurs (
@@ -43,6 +53,7 @@ export const initDatabase = async () => {
         note REAL DEFAULT 0,
         statutAbonnement TEXT DEFAULT 'expire' CHECK (statutAbonnement IN ('actif', 'expire', 'suspendu')),
         dateFinAbonnement TEXT,
+        statutValidation TEXT DEFAULT 'en_attente' CHECK (statutValidation IN ('en_attente', 'valide', 'refuse')),
         ville_id INTEGER NOT NULL,
         categorie_id INTEGER NOT NULL,
         utilisateur_id INTEGER NOT NULL,
@@ -53,30 +64,25 @@ export const initDatabase = async () => {
     `);
     console.log('✅ Base de données initialisée');
 
-    // ===== AJOUT DES DONNÉES DE TEST =====
+  
     
-    // 1. Villes par défaut
-    await db.runAsync(`
-      INSERT OR IGNORE INTO villes (nom, region) VALUES 
-        ('Antananarivo', 'Analamanga'),
-        ('Fianarantsoa', 'Haute Matsiatra'),
-        ('Toamasina', 'Atsinanana'),
-        ('Mahajanga', 'Boeny'),
-        ('Antsiranana', 'Diana'),
-        ('Toliara', 'Atsimo-Andrefana')
-    `);
-
     // 3. Admin par défaut
-  await db.runAsync(`
-  INSERT OR IGNORE INTO utilisateurs (nom, email, motDePasse, telephone, role)
-  VALUES ('Admin', 'admin@bonplan.mg', 'admin123', '034 00 00 00', 'admin')
-`); 
+const adminExists = await db.getAllAsync('SELECT * FROM utilisateurs WHERE role = "admin"');
+   if (adminExists.length === 0) {
+      const hashedPassword = await hashPassword('admin123');
+      await db.runAsync(
+        `INSERT INTO utilisateurs (nom, email, motDePasse, telephone, role)
+         VALUES ('Admin', 'admin@bonplan.mg', ?, '034 09 755 55', 'admin')`,
+        [hashedPassword]
+      );
+      console.log('Compte Admin créé avec mot de passe hashé');
+    }
 
 
     // 2. Catégories par défaut
     await db.runAsync(`
       INSERT OR IGNORE INTO categories (nom, description, icone) VALUES 
-        ('Hôtels', 'Établissements d\'hébergement', '🏨'),
+         ("Hôtels", "Établissements d'hébergement", "🏨"),
         ('Restaurants', 'Établissements de restauration', '🍽️'),
         ('Cybercafés', 'Services internet et informatique', '💻'),
         ('Artisans', 'Artisanat et créations locales', '🎨'),
@@ -85,7 +91,6 @@ export const initDatabase = async () => {
     `);
 
     console.log('✅ Données de test insérées');
-    // ===== FIN DES DONNÉES DE TEST =====
 
   } catch (error) {
     console.error('❌ Erreur:', error);

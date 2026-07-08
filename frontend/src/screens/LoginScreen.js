@@ -1,4 +1,4 @@
-import React, {useState} from "react";
+import React, {useState,useEffect} from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert, 
 } from 'react-native';
 import {useAuth} from '../context/AuthContext';
+import db from '../database/database';
 
 export default function LoginScreen({navigation}){
 
@@ -16,9 +17,60 @@ const [email, setEmail] = useState('');
 const [password, setPassword] = useState('');
 const [loading, setLoading] = useState(false);
 
+useEffect(() => {
+  const checkAdmin = async () => {
+    const result = await db.getAllAsync('SELECT * FROM utilisateurs WHERE role = "admin"');
+    console.log('Admin trouvé ?', result);
+  };
+  checkAdmin();
+}, []);
+
 const { login } = useAuth();
 
-const handleLogin = async() => {
+const handleLogin = async () => {
+  if (!email || !password) {
+    Alert.alert('Erreur', 'Veuillez remplir tous les champs');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    // 🔍 1. Vérifier si l'utilisateur existe
+    const userCheck = await db.getAllAsync(
+      'SELECT * FROM utilisateurs WHERE email = ?',
+      [email]
+    );
+    console.log('🔍 Utilisateur trouvé ?', userCheck);
+
+    if (userCheck.length === 0) {
+      console.log(' Aucun utilisateur avec cet email');
+      Alert.alert('Erreur', 'Email ou mot de passe incorrect');
+      setLoading(false);
+      return;
+    }
+
+    console.log('Utilisateur trouvé:', userCheck[0]);
+
+    // 🔍 2. Vérifier le mot de passe (hashé)
+    const result = await login(email, password);
+    console.log('🔍 Résultat login:', result);
+
+    if (result.success) {
+      Alert.alert('Connexion réussie', `Bonjour ${result.user.nom} !`);
+    } else {
+      Alert.alert('Erreur', result.error);
+    }
+  } catch (error) {
+    console.log(' ERREUR EXACTE:', error);
+    Alert.alert('Erreur', 'Une erreur est survenue');
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+
+{/** const handleLogin = async() => {
     if(!email || !password) {
         Alert.alert('Erreur', 'Veuillez remplir tous les champs');
         return;
@@ -41,7 +93,7 @@ const handleLogin = async() => {
         setLoading(false);
     }
 };
-
+*/}
 return(
     <SafeAreaView style={styles.container}>
      <View style={styles.content}>

@@ -20,6 +20,7 @@ import AdminScreen from '../screens/AdminScreen';
 import AdminVillesScreen from '../screens/AdminVillesScreen';
 import AdminCategorie from '../screens/AdminCategorie';
 import AdminUserScreen from '../screens/AdminUserScreen';
+import ProDashboardScreen from '../screens/ProDashbordScreen';
 
 
 const Stack = createStackNavigator();
@@ -33,6 +34,7 @@ function HomeStack() {
       <Stack.Screen name="Company" component={CompanyScreen} />
       <Stack.Screen name="Booking" component={BookingScreen} />
       <Stack.Screen name="AddCompany" component={AddCompanyScreen} />
+      <Stack.Screen  name="ProDashbord" component={ProDashboardScreen}/>
     </Stack.Navigator>
   );
 }
@@ -51,7 +53,8 @@ function AdminStack() {
 
 // Tabs pour l'application principale
 function MainTabs() {
-   const { user } = useAuth();
+  const { user } = useAuth();
+
   return (
      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
     <Tab.Navigator
@@ -89,8 +92,18 @@ function MainTabs() {
       <Tab.Screen name="Réservations" component={BookingsScreen2} />
       <Tab.Screen name="Favoris" component={FavoritesScreen} />
       <Tab.Screen name="Profil" component={ProfileScreen} />
-      <Tab.Screen name="Admin" component={AdminStack} />
-
+      {user?.role === 'admin' && (
+        <Tab.Screen 
+        name= 'admin'
+        component={AdminStack}
+        options={{
+        tabBarLabel: 'Admin',
+        tabBarIcon: ({ focused, color, size }) => (
+        <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />
+      ),
+        }}
+        />
+      )}
     </Tab.Navigator>
     </SafeAreaView>
   );
