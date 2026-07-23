@@ -3,11 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Alert,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -38,10 +39,11 @@ export default function ProfileScreen() {  // ← navigation retiré
     }
   }
 
-  useEffect(() => {
+useFocusEffect(
+  React.useCallback(() => {
     loadEntreprise();
-  }, []);
-
+  }, [])
+);
   const handleLogout = () => {
     Alert.alert(
       'Déconnexion',
@@ -121,6 +123,7 @@ export default function ProfileScreen() {  // ← navigation retiré
           </View>
         </View>
 
+
         {/* Bouton Ajouter une entreprise (seulement pour les Pro) */}
        {user?.role === 'pro' && (
       <View style={styles.sectionCard}>
@@ -137,7 +140,7 @@ export default function ProfileScreen() {  // ← navigation retiré
             {entreprise.statutValidation === 'valide' && (
               <TouchableOpacity
                 style={styles.dashboardButton}
-                onPress={() => navigation.navigate('ProDashboard')}
+                onPress={() => navigation.navigate('Accueil', { screen: 'ProDashbord' })}
               >
                 <Text style={styles.dashboardButtonText}>
                   📊 Accéder au Dashboard Pro
@@ -364,4 +367,29 @@ loadingText: {
   textAlign: 'center',
   paddingVertical: 10,
 },
+// ===== NOUVEAUX STYLES POUR LA BANNIÈRE =====
+statusBanner: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  padding: 14,
+  borderRadius: 10,
+  marginBottom: 16,
+  gap: 12,
+},
+statusPending: {
+  backgroundColor: '#ffc107',
+},
+statusValid: {
+  backgroundColor: '#28a745',
+},
+statusRefused: {
+  backgroundColor: '#dc3545',
+},
+statusText: {
+  color: '#fff',
+  fontSize: 15,
+  fontWeight: 'bold',
+  flex: 1,
+},
+// ===== FIN DES NOUVEAUX STYLES =====
 });

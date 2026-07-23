@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,30 +6,47 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Linking,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { entreprises, avis } from '../data/mockData';
+import db from '../database/database';
 
 export default function CompanyScreen() {
   const route = useRoute();
   const navigation = useNavigation();
   const { id } = route.params;
 
-  const entreprise = entreprises.find(e => e.id === id);
-  const avisEntreprise = avis.filter(a => a.entrepriseId === id);
+  const [entreprise, setEntreprise] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  if (!entreprise) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Text>Entreprise non trouvée</Text>
-      </SafeAreaView>
-    );
-  }
+  // Charger les données réelles de l'entreprise
+  useEffect(() => {
+    const loadCompany = async () => {
+      try {
+        const result = await db.getAllAsync(`
+          SELECT e.*, v.nom as ville, c.nom as categorie
+          FROM entreprises e
+          LEFT JOIN villes v ON e.ville_id = v.id
+          LEFT JOIN categories c ON e.categorie_id = c.id
+          WHERE e.id = ?
+        `, [id]);
+        if (result.length > 0) {
+          setEntreprise(result[0]);
+        }
+      } catch (error) {
+        console.error('Erreur chargement entreprise:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadCompany();
+  }, [id]);
 
+  // Afficher les étoiles
   const renderStars = (note) => {
     let stars = [];
     for (let i = 0; i < 5; i++) {
@@ -45,26 +62,34 @@ export default function CompanyScreen() {
     return stars;
   };
 
-  const renderAvis = ({ item }) => (
-    <View style={styles.avisItem}>
-      <View style={styles.avisHeader}>
-        <Text style={styles.avisNom}>{item.nomClient}</Text>
-        <View style={styles.avisStars}>{renderStars(item.note)}</View>
-      </View>
-      <Text style={styles.avisCommentaire}>{item.commentaire}</Text>
-      <Text style={styles.avisDate}>{item.date}</Text>
-    </View>
-  );
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator size="large" color="#007BFF" />
+      </SafeAreaView>
+    );
+  }
+
+  if (!entreprise) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.errorText}>Entreprise non trouvée</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView>
-        {/* Image */}
+        {/* Image de couverture */}
         <View style={styles.imageContainer}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
-          <Image source={{ uri: entreprise.photo }} style={styles.image} />
+          <Image
+            source={{ uri: entreprise.logo || 'https://via.placeholder.com/400x200' }}
+            style={styles.image}
+          />
           <View style={styles.imageOverlay} />
         </View>
 
@@ -74,13 +99,13 @@ export default function CompanyScreen() {
           <Text style={styles.categorie}>{entreprise.categorie}</Text>
 
           <View style={styles.ratingContainer}>
-            <View style={styles.starsContainer}>{renderStars(entreprise.note)}</View>
-            <Text style={styles.ratingCount}>{avisEntreprise.length} avis</Text>
+            <View style={styles.starsContainer}>{renderStars(entreprise.note || 0)}</View>
+            <Text style={styles.ratingCount}>0 avis</Text>
           </View>
 
           {/* Boutons d'action */}
           <View style={styles.actionContainer}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => Linking.openURL(`tel:${entreprise.telephone}`)}>
               <Ionicons name="call-outline" size={22} color="#007BFF" />
               <Text style={styles.actionButtonText}>Appeler</Text>
             </TouchableOpacity>
@@ -88,7 +113,7 @@ export default function CompanyScreen() {
               <Ionicons name="navigate-outline" size={22} color="#007BFF" />
               <Text style={styles.actionButtonText}>Itinéraire</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => Linking.openURL(`whatsapp://send?phone=${entreprise.telephone}`)}>
               <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
               <Text style={[styles.actionButtonText, { color: '#25D366' }]}>WhatsApp</Text>
             </TouchableOpacity>
@@ -97,7 +122,7 @@ export default function CompanyScreen() {
           {/* Description */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>📝 Description</Text>
-            <Text style={styles.description}>{entreprise.description}</Text>
+            <Text style={styles.description}>{entreprise.description || 'Aucune description'}</Text>
           </View>
 
           {/* Informations */}
@@ -113,39 +138,37 @@ export default function CompanyScreen() {
             </View>
             <View style={styles.infoItem}>
               <Ionicons name="time-outline" size={18} color="#7f8c8d" />
-              <Text style={styles.infoText}>{entreprise.horaires}</Text>
+              <Text style={styles.infoText}>{entreprise.horaires || 'Non renseigné'}</Text>
             </View>
             {entreprise.siteWeb && (
-              <TouchableOpacity style={styles.infoItem}>
+              <TouchableOpacity style={styles.infoItem} onPress={() => Linking.openURL(`https://${entreprise.siteWeb}`)}>
                 <Ionicons name="globe-outline" size={18} color="#007BFF" />
                 <Text style={[styles.infoText, styles.websiteText]}>{entreprise.siteWeb}</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Bouton Réserver */}
-          <TouchableOpacity
-            style={styles.bookButton}
-            onPress={() => navigation.navigate('Booking', { id: entreprise.id })}
-          >
-            <Ionicons name="calendar-outline" size={22} color="#fff" />
-            <Text style={styles.bookButtonText}>Réserver maintenant</Text>
-          </TouchableOpacity>
+          {/* Section spécifique au TRANSPORT */}
+          {entreprise.type_activite === 'transport' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>🚐 Véhicules disponibles</Text>
+              <TouchableOpacity
+                style={styles.vehiculeButton}
+                onPress={() => navigation.navigate('CompanyVehicules', { idEntreprise: entreprise.id })}
+              >
+                <Ionicons name="bus-outline" size={22} color="#fff" />
+                <Text style={styles.vehiculeButtonText}>Voir les véhicules</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-          {/* Avis */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>⭐ Avis des clients</Text>
-            {avisEntreprise.length === 0 ? (
-              <Text style={styles.noAvis}>Aucun avis pour le moment</Text>
-            ) : (
-              <FlatList
-                data={avisEntreprise}
-                renderItem={renderAvis}
-                keyExtractor={(item) => item.id.toString()}
-                scrollEnabled={false}
-              />
-            )}
-          </View>
+          {/* Section spécifique à l'HÔTEL (exemple pour plus tard) */}
+          {entreprise.type_activite === 'hotel' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>🛏️ Chambres disponibles</Text>
+              <Text style={styles.infoText}>Fonctionnalité à venir...</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -261,54 +284,29 @@ const styles = StyleSheet.create({
   websiteText: {
     color: '#007BFF',
   },
-  bookButton: {
+  vehiculeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#007BFF',
     borderRadius: 12,
     paddingVertical: 14,
-    marginBottom: 20,
     gap: 10,
   },
-  bookButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  vehiculeButtonText: {
     color: '#fff',
-  },
-  avisItem: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-  },
-  avisHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  avisNom: {
-    fontSize: 14,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    fontSize: 16,
   },
-  avisStars: {
-    flexDirection: 'row',
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  avisCommentaire: {
-    fontSize: 14,
-    color: '#555',
-    marginBottom: 4,
-  },
-  avisDate: {
-    fontSize: 12,
-    color: '#95a5a6',
-  },
-  noAvis: {
-    fontSize: 14,
-    color: '#95a5a6',
+  errorText: {
+    fontSize: 16,
+    color: '#e74c3c',
     textAlign: 'center',
-    paddingVertical: 20,
+    marginTop: 50,
   },
 });

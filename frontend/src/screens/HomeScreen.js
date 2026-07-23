@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,21 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   FlatList,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { categories, entreprises } from '../data/mockData';
+import categories from '../data/mockData'
+import db from '../database/database';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function HomeScreen() {
+
+const [entreprises, setEntreprises] = useState([]);
+const [loading, setLoading] = useState(true);
+
   const navigation = useNavigation();
   const [searchText, setSearchText] = useState('');
 
@@ -32,6 +38,32 @@ export default function HomeScreen() {
       <Text style={styles.categoryText}>{item.nom}</Text>
     </TouchableOpacity>
   );
+
+  const loadEntreprises = async () => {
+    try {
+      const result = await db.getAllAsync(`
+        SELECT e.*, v.nom as ville, c.nom as categorie
+        FROM entreprises e
+        LEFT JOIN villes v ON e.ville_id = v.id
+        LEFT JOIN categories c ON e.categorie_id = c.id
+        WHERE e.statutValidation = 'valide'
+      AND e.utilisateur_id IN (SELECT id FROM utilisateurs)
+        ORDER BY e.id DESC
+      `);
+      setEntreprises(result);
+    } catch (error) {
+      console.error('Erreur chargement entreprises:', error);
+    } finally {
+      setLoading(false);
+    }
+  }; 
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadEntreprises();
+    }, [])
+  );
+
 
   const renderCompany = ({ item }) => (
     <TouchableOpacity
@@ -60,6 +92,7 @@ export default function HomeScreen() {
       <Ionicons name="chevron-forward" size={20} color="#ccc" />
     </TouchableOpacity>
   );
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -107,13 +140,29 @@ export default function HomeScreen() {
       </View>
 
       {/* Liste des entreprises */}
-      <FlatList
-        data={filteredEntreprises}
-        renderItem={renderCompany}
-        keyExtractor={(item) => item.id.toString()}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-      />
+    <FlatList
+  data={entreprises}
+  keyExtractor={(item) => item.id.toString()}
+  renderItem={({ item }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => navigation.navigate('Company', { id: item.id })}
+    >
+      <Image source={{ uri: item.logo || 'https://via.placeholder.com/80' }} style={styles.image} />
+      <View style={styles.info}>
+        <Text style={styles.name}>{item.nom}</Text>
+        <Text style={styles.category}>{item.categorie}</Text>
+        <Text style={styles.location}>{item.ville}</Text>
+        <Text style={styles.rating}>⭐ {item.note || 0}</Text>
+      </View>
+    </TouchableOpacity>
+  )}
+  ListEmptyComponent={
+    <View style={styles.empty}>
+      <Text>Aucune entreprise validée pour le moment</Text>
+    </View>
+  }
+/>
     </SafeAreaView>
   );
 }
@@ -272,4 +321,58 @@ const styles = StyleSheet.create({
     color: '#2c3e50',
     marginLeft: 2,
   },
+  card: {
+  flexDirection: 'row',
+  backgroundColor: '#fff',
+  borderRadius: 12,
+  padding: 12,
+  marginBottom: 12,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 2,
+  alignItems: 'center',
+},
+image: {
+  width: 70,
+  height: 70,
+  borderRadius: 10,
+  backgroundColor: '#e0e0e0',
+},
+info: {
+  flex: 1,
+  marginLeft: 12,
+},
+name: {
+  fontSize: 16,
+  fontWeight: 'bold',
+  color: '#2c3e50',
+},
+category: {
+  fontSize: 14,
+  color: '#7f8c8d',
+  marginTop: 2,
+},
+location: {
+  fontSize: 14,
+  color: '#7f8c8d',
+  marginTop: 2,
+},
+rating: {
+  fontSize: 14,
+  color: '#f39c12',
+  marginTop: 4,
+  fontWeight: 'bold',
+},
+empty: {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingVertical: 50,
+},
+emptyText: {
+  fontSize: 16,
+  color: '#95a5a6',
+},
 });

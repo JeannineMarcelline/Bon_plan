@@ -5,11 +5,11 @@ import {
     TextInput,
     TouchableOpacity,
     StyleSheet,
-    SafeAreaView,
     Alert,
     ScrollView,
     Switch,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {useAuth} from '../context/AuthContext';
 
 export default function RegisterScreen({navigation}) {
@@ -48,7 +48,7 @@ export default function RegisterScreen({navigation}) {
                 Alert.alert(
                     'Insrciption réussie', 
             `Bienvenue ${result.user.nom} ! Vous êtes maintenant un ${role}.`,
-             [{ text: 'OK', onPress: () => navigation.navigate('Accueil') }]
+             //[{ text: 'OK', onPress: () => navigation.navigate('Accueil', { screen: 'Home' })}]
                 );
             }else{
                 Alert.alert('Erreur', result.error);

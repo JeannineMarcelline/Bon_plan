@@ -20,7 +20,14 @@ import AdminScreen from '../screens/AdminScreen';
 import AdminVillesScreen from '../screens/AdminVillesScreen';
 import AdminCategorie from '../screens/AdminCategorie';
 import AdminUserScreen from '../screens/AdminUserScreen';
-import ProDashboardScreen from '../screens/ProDashbordScreen';
+import ProDashbordScreen from '..//screens/ProDashbordScreen'
+import AdminEntrepriseScreen from '../screens/AdminEntrepriseScreen';
+import CompanyVehiculeScreen from '../screens/CompanyVehiculeScreen';
+import PlaceScreen from '../screens/PlaceScreen'
+
+
+
+
 
 
 const Stack = createStackNavigator();
@@ -34,7 +41,9 @@ function HomeStack() {
       <Stack.Screen name="Company" component={CompanyScreen} />
       <Stack.Screen name="Booking" component={BookingScreen} />
       <Stack.Screen name="AddCompany" component={AddCompanyScreen} />
-      <Stack.Screen  name="ProDashbord" component={ProDashboardScreen}/>
+      <Stack.Screen  name="ProDashbord" component={ProDashbordScreen}/>
+      <Stack.Screen  name="CompanyVehicules" component={CompanyVehiculeScreen}/>
+     <Stack.Screen   name='Places' component={PlaceScreen}/>
     </Stack.Navigator>
   );
 }
@@ -46,6 +55,7 @@ function AdminStack() {
       <Stack.Screen name="AdminVilles" component={AdminVillesScreen} />
       <Stack.Screen name="AdminCategorie" component={AdminCategorie} />
       <Stack.Screen name="AdminUser" component={AdminUserScreen} />
+      <Stack.Screen name="AdminEntreprises" component={AdminEntrepriseScreen} />
 
     </Stack.Navigator>
   );

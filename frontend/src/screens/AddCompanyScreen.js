@@ -1,7 +1,8 @@
 import React, {useState, useEffect} from "react";
-import {View, Text, TextInput, TouchableOpacity, StyleSheet,SafeAreaView,
+import {View, Text, TextInput, TouchableOpacity, StyleSheet,
     ScrollView,Alert,ActivityIndicator,
 } from  'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from "../context/AuthContext";
 import db from '../database/database';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +19,7 @@ export default function AddCompanyScreen({navigation}){
     const [telephone, setTelephone] = useState('');
     const [siteweb, setSiteweb] = useState('');
     const [logo,setLogo] = useState('');
-    
+    const [typeActivite, setTypeActivite] = useState('service');
 
 
     const [villes, setVilles] = useState([]);
@@ -98,7 +99,7 @@ export default function AddCompanyScreen({navigation}){
     try{
     const result = await db.runAsync(
      `INSERT INTO entreprises (nom, description, adresse, telephone, siteweb, logo, 
-     ville_id, categorie_id, utilisateur_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ville_id, categorie_id, utilisateur_id, statutValidation, type_activite) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
      [
         nom,
         description || '',
@@ -109,14 +110,15 @@ export default function AddCompanyScreen({navigation}){
         villeId,
         categorieId,
         user.id,
-      'en_attente' 
+      'en_attente',
+      typeActivite
      ]
     );
     Alert.alert(
-        'Succès',
-        'Votre entreprise a été créée avec succès !',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+  ' Entreprise créée !',
+  'Votre entreprise est en attente de validation par l\'administrateur. Vous serez notifié dès qu\'elle sera validée.',
+  [{ text: 'OK', onPress: () => navigation.goBack() }]
+);
 
     }catch(error){
       console.error('Erreur création entreprise:' ,error);
@@ -291,6 +293,37 @@ return(
     )}
     </View>
     </View>
+{/* Type d'activité */}
+<View style={styles.inputContainer}>
+  <Text style={styles.label}>Type d'activité *</Text>
+  <View style={styles.pickerContainer}>
+    {['hotel', 'restaurant', 'transport', 'artisan', 'agriculteur', 'service'].map((type) => (
+      <TouchableOpacity
+        key={type}
+        style={[
+          styles.pickerItem,
+          typeActivite === type && styles.pickerItemSelected,
+        ]}
+        onPress={() => setTypeActivite(type)}
+      >
+        <Text
+          style={[
+            styles.pickerItemText,
+            typeActivite === type && styles.pickerItemTextSelected,
+          ]}
+        >
+          {type === 'hotel' && '🏨 Hôtel'}
+          {type === 'restaurant' && '🍽️ Restaurant'}
+          {type === 'transport' && '🚐 Transport'}
+          {type === 'artisan' && '🎨 Artisan'}
+          {type === 'agriculteur' && '🌾 Agriculteur'}
+          {type === 'service' && '🔧 Service'}
+        </Text>
+      </TouchableOpacity>
+    ))}
+  </View>
+</View>
+
       <TouchableOpacity
             style={styles.submitButton}
             onPress={handleSubmit}

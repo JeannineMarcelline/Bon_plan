@@ -3,13 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   FlatList,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import db from '../database/database';
 import { Ionicons } from '@expo/vector-icons';
@@ -130,18 +130,18 @@ export default function AdminScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={20} color="#ccc" />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => navigation.navigate('AdminEntreprises')}
-          >
-            <Ionicons name="business-outline" size={24} color="#ffc107" />
-            <Text style={styles.menuItemText}>Gérer les entreprises</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-          </TouchableOpacity>
+         <TouchableOpacity
+  style={styles.menuItem}
+  onPress={() => navigation.navigate('admin', { screen: 'AdminEntreprises' })}
+>
+  <Ionicons name="business-outline" size={24} color="#ffc107" />
+  <Text style={styles.menuItemText}>Gérer les entreprises</Text>
+  <Ionicons name="chevron-forward" size={20} color="#ccc" />
+</TouchableOpacity>
 
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => navigation.navigate('AdminUser')}
+            onPress={() => navigation.navigate('admin', { screen: 'AdminUser' })}
           >
             <Ionicons name="people-outline" size={24} color="#17a2b8" />
             <Text style={styles.menuItemText}>Gérer les utilisateurs</Text>
