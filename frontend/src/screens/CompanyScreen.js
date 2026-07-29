@@ -9,19 +9,96 @@ import {
   Linking,
   FlatList,
   ActivityIndicator,
+  TextInput,
+  Alert, 
+  Share
 } from 'react-native';
+import MapView, {Marker} from 'react-native-maps';
+import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import db from '../database/database';
+import { useAuth } from "../context/AuthContext";
 
 export default function CompanyScreen() {
+  const {user} = useAuth();
   const route = useRoute();
   const navigation = useNavigation();
   const { id } = route.params;
 
   const [entreprise, setEntreprise] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [userLocation, setUserLocation] = useState(null);
+  const [note, setNote] = useState(0);
+  const [commentaire, setCommentaire] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [avisList, setAvisList] = useState([]);
+  const [noteMoyenne, setNoteMoyenne] = useState(0);
+  const [nbAvis, setNbAvis] = useState(0);
+
+
+  // fonction pour l'avis
+   const loadAvis = async (entrepriseId) => {
+  try {
+    const result = await db.getAllAsync(`
+      SELECT avis.*, utilisateurs.nom as nom_utilisateur
+      FROM avis
+      LEFT JOIN utilisateurs ON avis.id_utilisateur = utilisateurs.id
+      WHERE avis.id_entreprise = ?
+      ORDER BY avis.date_avis DESC
+    `, [entrepriseId]);
+    setAvisList(result);
+
+    const count = result.length;
+    setNbAvis(count);
+    if(count > 0 ) {
+      const total = result.reduce((sum, avis ) => sum + avis.note, 0);
+      const moyenne = total / count;
+      setNoteMoyenne(moyenne);
+    }else{
+      setNoteMoyenne(0)
+    }
+  } catch (error) {
+    console.error('Erreur chargement avis:', error);
+  }
+};
+
+  const submitAvis = async () => {
+    if (!user) {
+    Alert.alert('Erreur', 'Vous devez être connecté pour laisser un avis');
+    return;
+  }
+   if(note === 0 ) {
+    Alert.alert('Erreur', 'Veuillez selectionner une note ');
+    return;
+   }
+   setSubmitting(true);
+    try{
+      await db.runAsync('INSERT INTO avis (id_utilisateur, id_entreprise, note, commentaire ) VALUES (?, ?, ?, ?)',
+        [user.id, entreprise.id,note, commentaire]
+      );
+   Alert.alert('Succès', 'L\'avis est bien insérer ');
+   setNote(0);
+   setCommentaire('');
+   await loadAvis(entreprise.id);
+    }catch(error){
+     console.error('Erreur:', error);
+     Alert.alert('Erreur', 'impossible d\'enregistré votre avis');
+    }finally{
+      setSubmitting(false)
+    }
+
+  }
+
+  const shareWhatsApp = () => {
+  const message = `🏢 *${entreprise.nom}*\n Adresse :  ${entreprise.adresse}\n Téléphone:  ${entreprise.telephone}\n Note : ${noteMoyenne.toFixed(1)}/5\n\n`;
+  const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
+  Linking.openURL(url).catch(() => {
+    Alert.alert('Erreur', 'WhatsApp n\'est pas installé sur votre téléphone');
+  });
+
+  }
 
   // Charger les données réelles de l'entreprise
   useEffect(() => {
@@ -36,6 +113,7 @@ export default function CompanyScreen() {
         `, [id]);
         if (result.length > 0) {
           setEntreprise(result[0]);
+          await loadAvis(result[0].id);
         }
       } catch (error) {
         console.error('Erreur chargement entreprise:', error);
@@ -44,7 +122,24 @@ export default function CompanyScreen() {
       }
     };
     loadCompany();
+   
   }, [id]);
+
+  useEffect (() => {
+    (async () => {
+       const {status} = await Location.requestForegroundPermissionsAsync();
+       if ( status !== "granted") {
+        Alert.alert('Permission refusée', 'Activer la localsation pour voir l\'itinéraire');
+        return;
+       }
+    const location = await Location.getCurrentPositionAsync({});
+    setUserLocation({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    });
+})();
+
+}, []);
 
   // Afficher les étoiles
   const renderStars = (note) => {
@@ -97,10 +192,14 @@ export default function CompanyScreen() {
         <View style={styles.content}>
           <Text style={styles.nom}>{entreprise.nom}</Text>
           <Text style={styles.categorie}>{entreprise.categorie}</Text>
-
-          <View style={styles.ratingContainer}>
-            <View style={styles.starsContainer}>{renderStars(entreprise.note || 0)}</View>
-            <Text style={styles.ratingCount}>0 avis</Text>
+ 
+           <View style={styles.ratingContainer}>
+           <View style={styles.starsContainer}>
+             {renderStars(noteMoyenne)}
+          </View>
+          <Text style={styles.ratingCount}>
+             ({nbAvis} avis)
+          </Text>
           </View>
 
           {/* Boutons d'action */}
@@ -109,14 +208,24 @@ export default function CompanyScreen() {
               <Ionicons name="call-outline" size={22} color="#007BFF" />
               <Text style={styles.actionButtonText}>Appeler</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
+               {userLocation && entreprise && (
+                 <TouchableOpacity 
+                 style={styles.actionButton}
+                 onPress={() => {
+                const url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation.latitude},${userLocation.longitude}&destination=${entreprise.latitude || -21.4526},${entreprise.longitude || 47.0855}`;
+              Linking.openURL(url);
+    }}
+                 >
               <Ionicons name="navigate-outline" size={22} color="#007BFF" />
               <Text style={styles.actionButtonText}>Itinéraire</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={() => Linking.openURL(`whatsapp://send?phone=${entreprise.telephone}`)}>
-              <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
-              <Text style={[styles.actionButtonText, { color: '#25D366' }]}>WhatsApp</Text>
-            </TouchableOpacity>
+
+               )}
+               
+          <TouchableOpacity style={styles.actionButton} onPress={shareWhatsApp}>
+          <Ionicons name="share-social-outline" size={22} color="#25D366" />
+          <Text style={[styles.actionButtonText, { color: '#25D366' }]}>Partager</Text>
+           </TouchableOpacity>
           </View>
 
           {/* Description */}
@@ -147,7 +256,96 @@ export default function CompanyScreen() {
               </TouchableOpacity>
             )}
           </View>
-
+          {/** formulaire de l'avis */}
+          {user && (
+           <View  style={styles.section}>
+            <Text style={styles.sectionTitle}>Donner votre avis </Text>
+              <View style={styles.starsContainer}>
+               {[1, 2, 3, 4, 5].map((stars) => (
+                <TouchableOpacity key={stars} onPress={() => setNote(stars)}>
+                 <Ionicons
+                   name={ stars <= note ? 'star' : 'star-outline'}
+                   size={32}
+                   color={stars <= note ? '#f39c12' : '#ccc'}
+                 />
+                </TouchableOpacity>
+               ))}
+              </View>
+               <TextInput
+               style={styles.commentInput}
+               placeholder='votre commentaire...'
+               value={commentaire}
+               onChangeText={setCommentaire}
+               multiline
+               numberOfLines={3}
+               />
+               <TouchableOpacity style={styles.submitButton} onPress={submitAvis} disabled={submitting} >
+                <Text style={styles.submitButtonText}>{submitting ? 'Envoi...' : 'Envoyer mon avis'}</Text>
+              </TouchableOpacity> 
+           </View>
+          )}
+         
+          {/** Liste des Avis */}
+  <View style={styles.section}>
+  <Text style={styles.sectionTitle}> Avis des clients</Text>
+  {avisList.length === 0 ? (
+    <Text style={styles.noAvis}>Aucun avis pour le moment</Text>
+  ) : (
+    avisList.map((avis) => (
+      <View key={avis.id_avis} style={styles.avisCard}>
+        <View style={styles.avisHeader}>
+          <Text style={styles.avisNom}>{avis.nom_utilisateur || 'Anonyme'}</Text>
+          <View style={styles.avisStars}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <Ionicons
+                key={star}
+                name={star <= avis.note ? 'star' : 'star-outline'}
+                size={16}
+                color={star <= avis.note ? '#f39c12' : '#ccc'}
+              />
+            ))}
+          </View>
+        </View>
+        <Text style={styles.avisCommentaire}>{avis.commentaire}</Text>
+        <Text style={styles.avisDate}>{avis.date_avis}</Text>
+      </View>
+    ))
+  )}
+</View>
+          {/** CARTE */}
+          <View style={styles.mapContainer}>
+             <MapView
+             style={styles.map}
+             region={{
+              latitude: userLocation?.latitude || -21.4526,
+              longitude: userLocation?.longitude || 47.0855,
+              latitudeDelta: 0.05,
+              longitudeDelta: 0.05,
+             }}
+             >
+            {/** Marque de l'entreprise */}
+            {entreprise.latitude && entreprise.longitude && (
+              <Marker
+              coordinate={{
+                latitude: entreprise.latitude,
+                longitude: entreprise.longitude,
+              }}
+              title={entreprise.nom}
+              description={entreprise.adresse}
+              />
+            )}
+            {/** Marque de client */}
+            {userLocation && (
+            <Marker
+            coordinate={userLocation}
+            title='Ma position'
+            pinColor='blue'
+            />
+            )}
+          </MapView>
+          </View>
+     
+ 
           {/* Section spécifique au TRANSPORT */}
           {entreprise.type_activite === 'transport' && (
             <View style={styles.section}>
@@ -174,6 +372,8 @@ export default function CompanyScreen() {
     </SafeAreaView>
   );
 }
+
+
 
 const styles = StyleSheet.create({
   container: {
@@ -309,4 +509,86 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 50,
   },
+
+  // style de carte 
+mapContainer: {
+  height: 200,
+  borderRadius: 12,
+  overflow: 'hidden',
+  marginBottom: 16,
+  backgroundColor: '#e9ecef',
+},
+map: {
+  flex: 1,
+},
+// style de Avis 
+
+starsContainer: {
+  flexDirection: 'row',
+  justifyContent: 'center',
+  gap: 8,
+  marginVertical: 12,
+},
+commentInput: {
+  borderWidth: 1,
+  borderColor: '#ddd',
+  borderRadius: 10,
+  padding: 12,
+  fontSize: 16,
+  textAlignVertical: 'top',
+  marginBottom: 12,
+  backgroundColor: '#fff',
+},
+submitButton: {
+  backgroundColor: '#007BFF',
+  borderRadius: 10,
+  paddingVertical: 12,
+  alignItems: 'center',
+},
+submitButtonText: {
+  color: '#fff',
+  fontWeight: 'bold',
+  fontSize: 16,
+},
+avisCard: {
+  backgroundColor: '#fff',
+  borderRadius: 10,
+  padding: 12,
+  marginBottom: 10,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.05,
+  shadowRadius: 4,
+  elevation: 2,
+},
+avisHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 4,
+},
+avisNom: {
+  fontWeight: 'bold',
+  fontSize: 14,
+  color: '#2c3e50',
+},
+avisStars: {
+  flexDirection: 'row',
+},
+avisCommentaire: {
+  fontSize: 14,
+  color: '#555',
+  marginVertical: 4,
+},
+avisDate: {
+  fontSize: 12,
+  color: '#95a5a6',
+},
+noAvis: {
+  textAlign: 'center',
+  color: '#95a5a6',
+  fontSize: 14,
+  paddingVertical: 20,
+},
+
 });

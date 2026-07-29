@@ -16,7 +16,7 @@ export default function AdminEntrepriseScreen() {
   const [entreprises, setEntreprises] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Charger les entreprises
+  // Charger les entreprises (NON MODIFIÉ)
   const loadEntreprises = async () => {
     try {
       setLoading(true);
@@ -42,25 +42,30 @@ export default function AdminEntrepriseScreen() {
     loadEntreprises();
   }, []);
 
-  // Valider ou refuser une entreprise
+  // Valider ou refuser une entreprise (NON MODIFIÉ - Garde la même logique)
   const updateStatut = async (id, nouveauStatut, nom) => {
     const action = nouveauStatut === 'valide' ? 'valider' : 'refuser';
+    const actionLabel = nouveauStatut === 'valide' ? 'valider' : 'refuser';
+    
     Alert.alert(
       'Confirmation',
-      `Voulez-vous vraiment ${action} "${nom}" ?`,
+      `Voulez-vous vraiment ${actionLabel} "${nom}" ?`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: action === 'valider' ? 'Valider' : 'Refuser',
-          style: action === 'valider' ? 'default' : 'destructive',
+          text: actionLabel === 'valider' ? 'Valider' : 'Refuser',
+          style: actionLabel === 'valider' ? 'default' : 'destructive',
           onPress: async () => {
             try {
               await db.runAsync(
                 'UPDATE entreprises SET statutValidation = ? WHERE id = ?',
                 [nouveauStatut, id]
               );
-              Alert.alert('✅ Succès', `Entreprise ${action === 'valider' ? 'validée' : 'refusée'} !`);
-              loadEntreprises(); // Recharger la liste
+              const message = actionLabel === 'valider' 
+                ? 'Entreprise validée et visible dans l\'app client !' 
+                : 'Entreprise refusée, elle n\'apparaîtra pas dans l\'app client.';
+              Alert.alert('✅ Succès', message);
+              loadEntreprises();
             } catch (error) {
               console.error('Erreur mise à jour:', error);
               Alert.alert('Erreur', 'Impossible de mettre à jour');
@@ -71,82 +76,150 @@ export default function AdminEntrepriseScreen() {
     );
   };
 
-  // Couleur du statut
+  // MODIFIE: Nouvelle fonction pour désactiver une entreprise validée
+  const handleDesactiver = (id, nom) => {
+    Alert.alert(
+      'Désactiver l\'entreprise',
+      `Voulez-vous vraiment désactiver "${nom}" ?\n\nElle ne sera plus visible dans l'app client.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Désactiver',
+          style: 'destructive',
+          onPress: () => updateStatut(id, 'refuse', nom),
+        },
+      ]
+    );
+  };
+
+  // MODIFIE: Nouvelle fonction pour réactiver une entreprise refusée
+  const handleReactive = (id, nom) => {
+    Alert.alert(
+      'Réactiver l\'entreprise',
+      `Voulez-vous vraiment réactiver "${nom}" ?\n\nElle sera de nouveau visible dans l'app client.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Réactiver',
+          onPress: () => updateStatut(id, 'valide', nom),
+        },
+      ]
+    );
+  };
+
+  // MODIFIE: Couleur du statut
   const getStatutStyle = (statut) => {
     if (statut === 'valide') return styles.statutValide;
     if (statut === 'refuse') return styles.statutRefuse;
     return styles.statutEnAttente;
   };
 
-  // Libellé du statut
+  // MODIFIE: Libellé du statut
   const getStatutLabel = (statut) => {
-    if (statut === 'valide') return '✅ Validée';
-    if (statut === 'refuse') return '❌ Refusée';
-    return '⏳ En attente';
+    if (statut === 'valide') return 'Validée';
+    if (statut === 'refuse') return 'Refusée';
+    return 'En attente';
   };
 
-  // Rendu d'une ligne
+  // MODIFIE: Rendu d'une ligne avec nouveaux boutons
   const renderItem = ({ item }) => (
     <View style={styles.card}>
-      <View style={styles.cardContent}>
-         <Text style={styles.cardTitle}>{item.id}</Text>
+      {/* LIGNE 1: Nom + Badge + Actions */}
+      <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{item.nom}</Text>
-        <Text style={styles.cardSubtitle}>👤 {item.proprietaire}</Text>
-        <Text style={styles.cardSubtitle}>📍 {item.ville}</Text>
-        <Text style={styles.cardSubtitle}>🏷️ {item.categorie}</Text>
-        <Text style={[styles.statutBadge, getStatutStyle(item.statutValidation)]}>
-          {getStatutLabel(item.statutValidation)}
-        </Text>
+        <View style={styles.headerRight}>
+          <View style={[styles.statutBadge, getStatutStyle(item.statutValidation)]}>
+            <Text style={styles.statutText}>{getStatutLabel(item.statutValidation)}</Text>
+          </View>
+          
+          {/* MODIFIE: Actions avec boutons textes selon le statut */}
+          <View style={styles.cardActions}>
+            {item.statutValidation === 'valide' && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.actionDesactiver]}
+                onPress={() => handleDesactiver(item.id, item.nom)}
+              >
+                <Ionicons name="ban-outline" size={16} color="#EA580C" />
+                <Text style={styles.actionTextDesactiver}>Désactiver</Text>
+              </TouchableOpacity>
+            )}
+            
+            {item.statutValidation === 'en_attente' && (
+              <>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.actionValider]}
+                  onPress={() => updateStatut(item.id, 'valide', item.nom)}
+                >
+                  <Ionicons name="checkmark-outline" size={16} color="#16A34A" />
+                  <Text style={styles.actionTextValider}>Valider</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.actionRefuser]}
+                  onPress={() => updateStatut(item.id, 'refuse', item.nom)}
+                >
+                  <Ionicons name="close-outline" size={16} color="#DC2626" />
+                  <Text style={styles.actionTextRefuser}>Refuser</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            
+            {item.statutValidation === 'refuse' && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.actionReactive]}
+                onPress={() => handleReactive(item.id, item.nom)}
+              >
+                <Ionicons name="refresh-outline" size={16} color="#2563EB" />
+                <Text style={styles.actionTextReactive}>Réactiver</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </View>
-      <View style={styles.cardActions}>
-        {item.statutValidation === 'en_attente' && (
-          <>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.validerButton]}
-              onPress={() => updateStatut(item.id, 'valide', item.nom)}
-            >
-              <Ionicons name="checkmark" size={20} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.refuserButton]}
-              onPress={() => updateStatut(item.id, 'refuse', item.nom)}
-            >
-              <Ionicons name="close" size={20} color="#fff" />
-            </TouchableOpacity>
-          </>
-        )}
-        {item.statutValidation === 'valide' && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.refuserButton]}
-            onPress={() => updateStatut(item.id, 'refuse', item.nom)}
-          >
-            <Ionicons name="close" size={20} color="#fff" />
-          </TouchableOpacity>
-        )}
-        {item.statutValidation === 'refuse' && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.validerButton]}
-            onPress={() => updateStatut(item.id, 'valide', item.nom)}
-          >
-            <Ionicons name="checkmark" size={20} color="#fff" />
-          </TouchableOpacity>
-        )}
+
+      {/* LIGNE 2: Infos en 1 ligne avec icônes Ionicons */}
+      <View style={styles.cardInfo}>
+        <View style={styles.infoItem}>
+          <Ionicons name="person-outline" size={14} color="#6B7280" />
+          <Text style={styles.infoText}>{item.proprietaire}</Text>
+        </View>
+        <Text style={styles.infoSeparator}>|</Text>
+        <View style={styles.infoItem}>
+          <Ionicons name="location-outline" size={14} color="#6B7280" />
+          <Text style={styles.infoText}>{item.ville}</Text>
+        </View>
+        <Text style={styles.infoSeparator}>|</Text>
+        <View style={styles.infoItem}>
+          <Ionicons name="pricetag-outline" size={14} color="#6B7280" />
+          <Text style={styles.infoText}>{item.categorie}</Text>
+        </View>
       </View>
+
+      {/* MODIFIE: Tooltip pour les entreprises refusées */}
+      {item.statutValidation === 'refuse' && (
+        <View style={styles.tooltipContainer}>
+          <Ionicons name="information-circle-outline" size={14} color="#9CA3AF" />
+          <Text style={styles.tooltipText}>Ne s'affiche pas dans l'app client</Text>
+        </View>
+      )}
     </View>
   );
 
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" color="#007BFF" />
+        <ActivityIndicator size="large" color="#2563EB" />
       </SafeAreaView>
     );
   }
 
+  // MODIFIE: Header avec icône Building2 (Ionicons)
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>🏢 Gestion des entreprises</Text>
+        <View style={styles.headerRow}>
+          <Ionicons name="business-outline" size={28} color="#2563EB" />
+          <Text style={styles.title}>Gestion des entreprises</Text>
+        </View>
         <Text style={styles.subtitle}>{entreprises.length} entreprises enregistrées</Text>
       </View>
 
@@ -157,7 +230,7 @@ export default function AdminEntrepriseScreen() {
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="business-outline" size={50} color="#ccc" />
+            <Ionicons name="business-outline" size={50} color="#D1D5DB" />
             <Text style={styles.emptyText}>Aucune entreprise enregistrée</Text>
           </View>
         }
@@ -166,25 +239,214 @@ export default function AdminEntrepriseScreen() {
   );
 }
 
+// ===== STYLES REFONDUS =====
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  header: { padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#2c3e50' },
-  subtitle: { fontSize: 14, color: '#95a5a6', marginTop: 2 },
-  list: { paddingHorizontal: 15, paddingBottom: 20, paddingTop: 10 },
-  card: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 10, alignItems: 'center' },
-  cardContent: { flex: 1 },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50' },
-  cardSubtitle: { fontSize: 14, color: '#7f8c8d', marginTop: 2 },
-  statutBadge: { fontSize: 13, fontWeight: '600', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginTop: 6 },
-  statutEnAttente: { backgroundColor: '#fff3cd', color: '#856404' },
-  statutValide: { backgroundColor: '#d4edda', color: '#155724' },
-  statutRefuse: { backgroundColor: '#f8d7da', color: '#721c24' },
-  cardActions: { flexDirection: 'row', gap: 8 },
-  actionButton: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  validerButton: { backgroundColor: '#28a745' },
-  refuserButton: { backgroundColor: '#dc3545' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  empty: { alignItems: 'center', paddingTop: 60 },
-  emptyText: { fontSize: 16, color: '#95a5a6', marginTop: 10 },
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  
+  // MODIFIE: Header avec icône et design épuré
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#111827',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginLeft: 40,
+  },
+
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    paddingTop: 12,
+  },
+
+  // MODIFIE: Card redesignée
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+
+  // LIGNE 1: Nom + Badge + Actions
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    flex: 1,
+    marginRight: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  // Badge statut (sans emoji)
+  statutBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statutText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statutEnAttente: {
+    backgroundColor: '#FEF3C7',
+  },
+  statutEnAttenteText: {
+    color: '#92400E',
+  },
+  statutValide: {
+    backgroundColor: '#D1FAE5',
+  },
+  statutValideText: {
+    color: '#065F46',
+  },
+  statutRefuse: {
+    backgroundColor: '#FEE2E2',
+  },
+  statutRefuseText: {
+    color: '#991B1B',
+  },
+
+  // MODIFIE: Actions avec boutons textes
+  cardActions: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  
+  // Bouton Désactiver (pour Validée)
+  actionDesactiver: {
+    backgroundColor: '#FFF7ED', // orange-50
+  },
+  actionTextDesactiver: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#EA580C', // orange-600
+  },
+  
+  // Bouton Valider (pour En attente)
+  actionValider: {
+    backgroundColor: '#F0FDF4', // green-50
+  },
+  actionTextValider: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#16A34A', // green-600
+  },
+  
+  // Bouton Refuser (pour En attente)
+  actionRefuser: {
+    backgroundColor: '#FEF2F2', // red-50
+  },
+  actionTextRefuser: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#DC2626', // red-600
+  },
+  
+  // Bouton Réactiver (pour Refusée)
+  actionReactive: {
+    backgroundColor: '#EFF6FF', // blue-50
+  },
+  actionTextReactive: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#2563EB', // blue-600
+  },
+
+  // LIGNE 2: Infos en 1 ligne
+  cardInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  infoSeparator: {
+    fontSize: 14,
+    color: '#D1D5DB',
+    marginHorizontal: 4,
+  },
+
+  // MODIFIE: Tooltip pour les entreprises refusées
+  tooltipContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  tooltipText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  empty: {
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    marginTop: 12,
+  },
 });

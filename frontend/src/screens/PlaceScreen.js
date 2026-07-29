@@ -90,7 +90,7 @@ Alert.alert(
     [
       {
        text: 'OK',
-       onPress: () => navigation.navigate('MesReservationsTransport'),
+       onPress: () => navigation.navigate('MesReservations'),
       }
     ]
  );

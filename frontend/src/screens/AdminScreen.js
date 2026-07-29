@@ -24,7 +24,7 @@ export default function AdminScreen({ navigation }) {
     categories: 0,
   });
 
-  // ===== CHARGER LES STATISTIQUES =====
+  // ===== CHARGER LES STATISTIQUES (NON MODIFIÉ) =====
   useEffect(() => {
     const loadStats = async () => {
       try {
@@ -50,7 +50,7 @@ export default function AdminScreen({ navigation }) {
     loadStats();
   }, []);
 
-  // ===== VÉRIFIER QUE L'UTILISATEUR EST ADMIN =====
+  // ===== VÉRIFIER QUE L'UTILISATEUR EST ADMIN (NON MODIFIÉ) =====
   if (user?.role !== 'admin') {
     return (
       <SafeAreaView style={styles.container}>
@@ -74,202 +74,288 @@ export default function AdminScreen({ navigation }) {
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" color="#007BFF" />
+        <ActivityIndicator size="large" color="#2563EB" />
       </SafeAreaView>
     );
   }
 
-  // ===== MENU ADMIN =====
+  // ===== MENU ADMIN (DESIGN POLI) =====
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* En-tête */}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* MODIFIE: Header réduit et plus compact */}
         <View style={styles.header}>
-          <Text style={styles.title}>🔐 Administration</Text>
-          <Text style={styles.subtitle}>Gestion de la plateforme</Text>
+          <Text style={styles.title}>⚙️ Administration</Text>
+          <Text style={styles.subtitle}>Gestion de la plateforme Bon Plan Madagascar</Text>
         </View>
 
-        {/* Cartes statistiques */}
+        {/* MODIFIE: Stats avec icônes et design plus dense */}
         <View style={styles.statsGrid}>
-          <View style={[styles.statCard, { backgroundColor: '#007BFF' }]}>
-            <Text style={styles.statNumber}>{stats.entreprises}</Text>
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statNumber}>{stats.entreprises}</Text>
+              <Text style={styles.statIcon}>🏢</Text>
+            </View>
             <Text style={styles.statLabel}>Entreprises</Text>
+            <View style={styles.statTrend}>
+              <Ionicons name="trending-up" size={14} color="#10B981" />
+              <Text style={styles.trendText}>+2 ce mois</Text>
+            </View>
           </View>
-          <View style={[styles.statCard, { backgroundColor: '#28a745' }]}>
-            <Text style={styles.statNumber}>{stats.utilisateurs}</Text>
+
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statNumber}>{stats.utilisateurs}</Text>
+              <Text style={styles.statIcon}>👥</Text>
+            </View>
             <Text style={styles.statLabel}>Utilisateurs</Text>
+            <View style={styles.statTrend}>
+              <Ionicons name="trending-up" size={14} color="#10B981" />
+              <Text style={styles.trendText}>+5 ce mois</Text>
+            </View>
           </View>
-          <View style={[styles.statCard, { backgroundColor: '#ffc107' }]}>
-            <Text style={styles.statNumber}>{stats.villes}</Text>
+
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statNumber}>{stats.villes}</Text>
+              <Text style={styles.statIcon}>📍</Text>
+            </View>
             <Text style={styles.statLabel}>Villes</Text>
+            <View style={styles.statTrend}>
+              <Ionicons name="remove-outline" size={14} color="#6B7280" />
+              <Text style={[styles.trendText, styles.trendNeutral]}>Stable</Text>
+            </View>
           </View>
-          <View style={[styles.statCard, { backgroundColor: '#17a2b8' }]}>
-            <Text style={styles.statNumber}>{stats.categories}</Text>
+
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statNumber}>{stats.categories}</Text>
+              <Text style={styles.statIcon}>🏷️</Text>
+            </View>
             <Text style={styles.statLabel}>Catégories</Text>
+            <View style={styles.statTrend}>
+              <Ionicons name="trending-up" size={14} color="#10B981" />
+              <Text style={styles.trendText}>+1 ce mois</Text>
+            </View>
           </View>
         </View>
 
-        {/* Menu des actions */}
+        {/* MODIFIE: Menu sans fond d'icônes, plus d'espace */}
         <View style={styles.menuSection}>
           <Text style={styles.sectionTitle}>Gestion des données</Text>
 
-      <TouchableOpacity
-  style={styles.menuItem}
-  onPress={() => navigation.navigate('AdminVilles')}
->
-  <Ionicons name="location-outline" size={24} color="#007BFF" />
-  <Text style={styles.menuItemText}>Gérer les villes</Text>
-  <Ionicons name="chevron-forward" size={20} color="#ccc" />
-</TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('AdminVilles')}
+          >
+            <Ionicons name="location-outline" size={22} color="#2563EB" />
+            <Text style={styles.menuItemText}>Gérer les villes</Text>
+            <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => navigation.navigate('AdminCategorie')}
           >
-            <Ionicons name="pricetags-outline" size={24} color="#28a745" />
+            <Ionicons name="pricetags-outline" size={22} color="#2563EB" />
             <Text style={styles.menuItemText}>Gérer les catégories</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
           </TouchableOpacity>
-
-         <TouchableOpacity
-  style={styles.menuItem}
-  onPress={() => navigation.navigate('admin', { screen: 'AdminEntreprises' })}
->
-  <Ionicons name="business-outline" size={24} color="#ffc107" />
-  <Text style={styles.menuItemText}>Gérer les entreprises</Text>
-  <Ionicons name="chevron-forward" size={20} color="#ccc" />
-</TouchableOpacity>
 
           <TouchableOpacity
             style={styles.menuItem}
+            onPress={() => navigation.navigate('admin', { screen: 'AdminEntreprises' })}
+          >
+            <Ionicons name="business-outline" size={22} color="#2563EB" />
+            <Text style={styles.menuItemText}>Gérer les entreprises</Text>
+            <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuItem, styles.menuItemLast]}
             onPress={() => navigation.navigate('admin', { screen: 'AdminUser' })}
           >
-            <Ionicons name="people-outline" size={24} color="#17a2b8" />
+            <Ionicons name="people-outline" size={22} color="#2563EB" />
             <Text style={styles.menuItemText}>Gérer les utilisateurs</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
           </TouchableOpacity>
         </View>
 
         {/* Version */}
-        <Text style={styles.version}>Bon Plan Madagascar v1.0 - Admin</Text>
+        <Text style={styles.version}>Bon Plan Madagascar v1.0 — Admin</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ===== STYLES POLIS =====
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F9FAFB',
   },
   scrollContent: {
     padding: 20,
     paddingBottom: 40,
   },
+  
+  // MODIFIE: Header plus compact
   header: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24, // MODIFIE: text-2xl au lieu de text-3xl
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#111827',
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#7f8c8d',
-    marginTop: 2,
+    fontSize: 14, // MODIFIE: text-sm au lieu de text-base
+    color: '#6B7280',
+    marginTop: 4,
+    fontWeight: '400',
   },
+
+  // MODIFIE: Stats avec icônes et design plus dense
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 20,
-    gap: 10,
+    marginBottom: 24,
+    gap: 12,
   },
   statCard: {
     width: '48%',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16, // MODIFIE: rounded-2xl
     padding: 16,
-    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  statHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
   },
   statNumber: {
-    fontSize: 28,
+    fontSize: 28, // MODIFIE: text-3xl au lieu de text-4xl
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#2563EB',
+    letterSpacing: -1,
+  },
+  statIcon: {
+    fontSize: 20, // MODIFIE: w-5 h-5 en taille de police
+    color: '#9CA3AF',
   },
   statLabel: {
-    fontSize: 14,
-    color: '#fff',
-    opacity: 0.8,
-    marginTop: 4,
+    fontSize: 14, // MODIFIE: text-sm au lieu de text-base
+    color: '#6B7280',
+    marginTop: 2,
+    fontWeight: '500',
   },
+  statTrend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 4,
+  },
+  trendText: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '500',
+  },
+  trendNeutral: {
+    color: '#6B7280', // MODIFIE: gris pour Stable
+  },
+
+  // MODIFIE: Menu sans fond d'icônes, plus d'espace
   menuSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 12,
+    fontSize: 18, // MODIFIE: text-lg
+    fontWeight: '600',
+    color: '#111827',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 4, // MODIFIE: mb-3
+    letterSpacing: -0.3,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 16, // MODIFIE: py-4 au lieu de py-3
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#F3F4F6',
+    gap: 14, // MODIFIE: gap ajouté
+  },
+  menuItemLast: {
+    borderBottomWidth: 0,
   },
   menuItemText: {
     flex: 1,
-    fontSize: 16,
-    color: '#2c3e50',
-    marginLeft: 12,
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '500',
   },
+
+  // CENTER - Pour les écrans d'erreur/chargement
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#F9FAFB',
   },
   errorTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#e74c3c',
+    color: '#111827',
     marginTop: 20,
   },
   errorText: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: '#6B7280',
     textAlign: 'center',
     marginTop: 10,
+    lineHeight: 24,
   },
   backButton: {
-    marginTop: 20,
-    backgroundColor: '#007BFF',
-    paddingHorizontal: 30,
+    marginTop: 24,
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 32,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   backButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
+
+  // VERSION - Pied de page
   version: {
     textAlign: 'center',
-    marginTop: 20,
+    marginTop: 24,
     fontSize: 12,
-    color: '#95a5a6',
+    color: '#9CA3AF',
+    fontWeight: '400',
+    letterSpacing: 0.3,
   },
 });

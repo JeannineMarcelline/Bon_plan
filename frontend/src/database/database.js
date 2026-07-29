@@ -13,6 +13,8 @@ const hashPassword = async (password) => {
 };
 
 
+
+
 export const initDatabase = async () => {
 
   try {
@@ -51,6 +53,8 @@ export const initDatabase = async () => {
         horaires TEXT,
         siteWeb TEXT,
         note REAL DEFAULT 0,
+        latitude REAL,
+        longitude REAL,
         statutAbonnement TEXT DEFAULT 'expire' CHECK (statutAbonnement IN ('actif', 'expire', 'suspendu')),
         dateFinAbonnement TEXT,
         statutValidation TEXT DEFAULT 'en_attente' CHECK (statutValidation IN ('en_attente', 'valide', 'refuse')),
@@ -97,10 +101,22 @@ export const initDatabase = async () => {
       FOREIGN KEY (id_utilisateur) REFERENCES utilisateurs(id),
       FOREIGN KEY (id_vehicule) REFERENCES vehicules(id_vehicule),
       FOREIGN KEY (id_place) REFERENCES places(id_place)
-      )
+      );
+
+     CREATE TABLE IF NOT EXISTS avis (
+     id_avis INTEGER PRIMARY KEY AUTOINCREMENT,
+     id_utilisateur INTEGER NOT NULL,
+     id_entreprise INTEGER NOT NULL,
+     note INTEGER NOT NULL CHECK (note >= 1 and note <= 5),
+     commentaire TEXT,
+     date_avis TEXT DEFAULT CURRENT_TIMESTAMP,
+     FOREIGN KEY(id_utilisateur) REFERENCES utilisateurs(id) ON DELETE CASCADE,
+     FOREIGN KEY(id_entreprise) REFERENCES entreprises(id) ON DELETE CASCADE
+     );
     `);
 
     // ===== DONNÉES DE TEST TRANSPORT =====
+   
 const entreprise = await db.getAllAsync('SELECT id FROM entreprises WHERE id = 1');
 if (entreprise.length === 0) {
   console.log('⚠️ Entreprise id=1 non trouvée, création...');

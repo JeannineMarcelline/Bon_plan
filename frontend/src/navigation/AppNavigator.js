@@ -23,11 +23,9 @@ import AdminUserScreen from '../screens/AdminUserScreen';
 import ProDashbordScreen from '..//screens/ProDashbordScreen'
 import AdminEntrepriseScreen from '../screens/AdminEntrepriseScreen';
 import CompanyVehiculeScreen from '../screens/CompanyVehiculeScreen';
-import PlaceScreen from '../screens/PlaceScreen'
-
-
-
-
+import PlaceScreen from '../screens/PlaceScreen';
+import MesReservationsScreen from '../screens/MesReservationsScreen';
+import AddVehiculeScreen from '../screens/AddVehiculeScreen';
 
 
 const Stack = createStackNavigator();
@@ -43,7 +41,9 @@ function HomeStack() {
       <Stack.Screen name="AddCompany" component={AddCompanyScreen} />
       <Stack.Screen  name="ProDashbord" component={ProDashbordScreen}/>
       <Stack.Screen  name="CompanyVehicules" component={CompanyVehiculeScreen}/>
-     <Stack.Screen   name='Places' component={PlaceScreen}/>
+     <Stack.Screen  name='Places' component={PlaceScreen}/>
+    <Stack.Screen name="MesReservations" component={MesReservationsScreen} /> 
+    <Stack.Screen name="AddVehicle" component={AddVehiculeScreen} />
     </Stack.Navigator>
   );
 }
@@ -56,6 +56,7 @@ function AdminStack() {
       <Stack.Screen name="AdminCategorie" component={AdminCategorie} />
       <Stack.Screen name="AdminUser" component={AdminUserScreen} />
       <Stack.Screen name="AdminEntreprises" component={AdminEntrepriseScreen} />
+    
 
     </Stack.Navigator>
   );
@@ -83,9 +84,9 @@ function MainTabs() {
         tabBarStyle: {
           backgroundColor: '#fff',
           borderTopColor: '#f0f0f0',
-          height: 50,
+          height: 45,
           paddingBottom: 0,
-          paddingTop: 8,
+          paddingTop: 7,
            position: 'absolute', // ← Permet de coller en bas
             bottom: 0,
             left: 0,

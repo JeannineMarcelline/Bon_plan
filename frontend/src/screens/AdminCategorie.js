@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,328 +9,384 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
-  SafeAreaViewBase,
 } from 'react-native';
-import {Ionicons} from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import db from '../database/database';
 
-export default function AdminCategorie () {
-    const [categorie, setCategorie] = useState([]);
-    const [nom, setNom] = useState('');
-    const [description, setDescription] = useState('');
-    const [loading , setLoading] = useState(true);
-    const [modalVisible, setModalVisible] = useState(false);
-    const [modalMode, setModalMode] = useState('add');
-    const [selectedId, setSelectedId] = useState(null);
+export default function AdminCategorie() {
+  const [categorie, setCategorie] = useState([]);
+  const [nom, setNom] = useState('');
+  const [description, setDescription] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalMode, setModalMode] = useState('add');
+  const [selectedId, setSelectedId] = useState(null);
 
-    const loadCategorie = async () =>{
-     try{
-       setLoading(true);
-       const result = await db.getAllAsync('SELECT * FROM categories ORDER BY nom');
-       setCategorie(result);
-     }catch(error){
+  const loadCategorie = async () => {
+    try {
+      setLoading(true);
+      const result = await db.getAllAsync('SELECT * FROM categories ORDER BY nom');
+      setCategorie(result);
+    } catch (error) {
       console.error('Erreur de chargement de categorie: ', error);
-      Alert.alert('Erreur', 'Impossible de charger les villes');
-     }finally{
-        setLoading(false);
-     }
-    };
+      Alert.alert('Erreur', 'Impossible de charger les catégories');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    useEffect(() => {
-        loadCategorie();
-    }, []);
-
-   /** Ajout de categorie */
-
-   const AddCategorie = async () =>{
-   if(!nom.trim()){
-    Alert.alert('Erreur', 'le nom de categorie est obligatoire');
-    return;
-   }
-   try{
-   await db.runAsync('INSERT INTO categories (nom, description) VALUES ( ?, ?)',
-   [nom.trim(), description.trim()]
-    );
-    Alert.alert('Succès', 'Catégorie ajouté');
-    setNom('');
-    setDescription('');
-    setModalVisible(false);
+  useEffect(() => {
     loadCategorie();
-   }catch(error){
-     console.error('Erreur lors de l\'ajout du catégorie', error);
-     Alert.alert('Erreur', 'Impossible d\'ajouter le catégorie');
-   }
-   };
+  }, []);
 
-   /** Modifier le catégorie */
+  /** Ajout de categorie */
+  const AddCategorie = async () => {
+    if (!nom.trim()) {
+      Alert.alert('Erreur', 'le nom de catégorie est obligatoire');
+      return;
+    }
+    try {
+      await db.runAsync('INSERT INTO categories (nom, description) VALUES (?, ?)',
+        [nom.trim(), description.trim()]
+      );
+      Alert.alert('Succès', 'Catégorie ajoutée !');
+      setNom('');
+      setDescription('');
+      setModalVisible(false);
+      loadCategorie();
+    } catch (error) {
+      console.error('Erreur lors de l\'ajout du catégorie', error);
+      Alert.alert('Erreur', 'Impossible d\'ajouter la catégorie');
+    }
+  };
 
-   const EditCategorie = async() =>{
-    if(!nom.trim()){
+  /** Modifier le catégorie */
+  const EditCategorie = async () => {
+    if (!nom.trim()) {
       Alert.alert('Erreur', 'le champ nom est obligatoire');
       return;
     }
-    try{
-      await db.runAsync('UPDATE categories SET nom = ?, description = ?  WHERE id = ? ',
-    [nom.trim(), description.trim(), selectedId]
-   );
-    Alert.alert('Succès', 'Modification réussi');
-    setNom('');
-    setDescription('');
-    
-    setSelectedId(null);
-    setModalVisible(false);
-    loadCategorie();
-    }catch(error){
-    console.error('Erreur lors de modification', error)
-    Alert.alert('Erreur', 'Modification échoué');
-    };
-   }
+    try {
+      await db.runAsync('UPDATE categories SET nom = ?, description = ? WHERE id = ?',
+        [nom.trim(), description.trim(), selectedId]
+      );
+      Alert.alert('Succès', 'Catégorie modifiée !');
+      setNom('');
+      setDescription('');
+      setSelectedId(null);
+      setModalVisible(false);
+      loadCategorie();
+    } catch (error) {
+      console.error('Erreur lors de modification', error);
+      Alert.alert('Erreur', 'Modification échouée');
+    }
+  }
 
-   /** Supprimer un categorie */
-
-  const deleteCategorie = (id, nom ) => {
-    Alert.alert('confirmation',
-       `Voulez vous supprimer vraiment "${nom}" ?`,
-       [
-        {text: 'Annuler', style: 'cancel'},
+  /** Supprimer un categorie */
+  const deleteCategorie = (id, nom) => {
+    Alert.alert(
+      'Confirmation',
+      `Voulez-vous vraiment supprimer "${nom}" ?\n\nCette action est irréversible.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
         {
-          text: 'supprimer',
+          text: 'Supprimer',
           style: 'destructive',
-          onPress: async() =>{
-            try{
-             await db.runAsync('DELETE FROM categories WHERE id = ?', [id]);
-             Alert.alert('Succès','categorie supprimée');
-             loadCategorie();
-            }catch(error){
-             console.error('Erreur de suppression', error);
-             Alert.alert('Erreur de suppression');
+          onPress: async () => {
+            try {
+              await db.runAsync('DELETE FROM categories WHERE id = ?', [id]);
+              Alert.alert('Succès', 'Catégorie supprimée !');
+              loadCategorie();
+            } catch (error) {
+              console.error('Erreur de suppression', error);
+              Alert.alert('Erreur', 'Impossible de supprimer la catégorie');
             }
           },
         },
-       ]
+      ]
     );
   };
 
-/** Modal pour ajouter */
+  /** Modal pour ajouter */
+  const openAddModal = () => {
+    setModalMode('add');
+    setNom('');
+    setDescription('');
+    setModalVisible(true);
+    setSelectedId(null);
+  }
 
-const openAddModal = () => {
-  setModalMode('add');
-  setNom('');
-  setDescription('');
-  
-  setModalVisible(true);
-  setSelectedId(null);
-  loadCategorie();
-}
+  const openEditModal = (item) => {
+    setModalMode('edit');
+    setNom(item.nom || '');
+    setDescription(item.description || '');
+    setModalVisible(true);
+    setSelectedId(item.id);
+  };
 
-const openEditModal = (item) => {
-  setModalMode('edit');
-  setNom(item.nom || '');
-  setDescription(item.description);
-  
-  setModalVisible(true);
-  setSelectedId(item.id);
-};
+  // MODIFIE: Rendu d'une ligne avec nouveau design
+  const RenderItem = ({ item }) => (
+    <View style={styles.card}>
+      {/* COLONNE GAUCHE - Infos */}
+      <View style={styles.cardContent}>
+        <Text style={styles.cardTitle}>{item.nom}</Text>
+        <View style={styles.cardInfo}>
+          <Ionicons name="document-text-outline" size={14} color="#6B7280" />
+          <Text style={styles.cardSubtitle}>{item.description || 'Aucune description'}</Text>
+        </View>
+        <View style={styles.cardInfo}>
+          <Ionicons  size={14} color="#9CA3AF" />
+          <Text style={styles.cardId}>ID: {item.id}</Text>
+        </View>
+      </View>
 
+      {/* COLONNE DROITE - Actions avec couleurs */}
+      <View style={styles.cardActions}>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.actionEdit]}
+          onPress={() => openEditModal(item)}
+        >
+          <Ionicons name="pencil-outline" size={20} color="#1a8d24" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.actionDelete]}
+          onPress={() => deleteCategorie(item.id, item.nom)}
+        >
+          <Ionicons name="trash-outline" size={20} color="#EF4444" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
-
-/** affichage ligne* */
-
-const RenderItem = ({item}) => (
- <View style={styles.card}>
-  <View style={styles.cardContent}>
-    <Text style={styles.cardTitle}>Nom: {item.nom || 'Nom de categorie non definie' }</Text>
-    <Text style={styles.cardSubtitle}>Description: {item.description}</Text>
-   
-    <Text style={styles.cardId}>ID: {item.id}</Text>
-  </View>
-
-  <View style={styles.cardActions}> 
-    <TouchableOpacity
-     style={[styles.actionButton, styles.editButton]}
-     onPress={() => openEditModal(item)}
-    >
-    <Ionicons name='pencil' size={18} color='#fff'/>
-    </TouchableOpacity>
-
-    <TouchableOpacity
-     style={[styles.actionButton, styles.deleteButton]}
-     onPress={() => deleteCategorie(item.id, item.nom)}
-    >
-     <Ionicons name='trash' size={18} color='#fff'/>
-    </TouchableOpacity>
-
-  </View>
- </View>
-);
-if(loading) {
-    return(
-        <SafeAreaView style={styles.center}>
-            <ActivityIndicator size='large' color='#007BFF' />
-        </SafeAreaView>
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator size='large' color='#2563EB' />
+      </SafeAreaView>
     );
-}
+  }
 
-return(
-   <SafeAreaView style={styles.container}>
-          <View style={styles.header}>
-           <Text style={styles.title}>Gestion des catégories </Text>
-           <Text style={styles.subtitle}>{categorie.length} catégorie enregistrée</Text>
+  // MODIFIE: Header avec icône et design cohérent
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <View style={styles.headerLeft}>
+            <Ionicons name="pricetags-outline" size={28} color="#2563EB" />
+            <Text style={styles.title}>Gestion des catégories</Text>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
-              <Ionicons name='add-circle' size={24} color='#fdf3f3' />
-              <Text style={styles.addButtonText}>Ajouter une catégorie </Text>
-          </TouchableOpacity>
-  
-          {/** liste */}
-        <FlatList
-         data={categorie}
-         keyExtractor={(item) => item.id.toString()}
-         renderItem={RenderItem}
-         contentContainerStyle={styles.list}
-         ListEmptyComponent={
+        </View>
+        <Text style={styles.subtitle}>{categorie.length} catégories enregistrées</Text>
+      </View>
+
+      {/* MODIFIE: Bouton Ajouter */}
+      <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+        <Ionicons name="add-outline" size={20} color="#FFFFFF" />
+        <Text style={styles.addButtonText}>Ajouter une catégorie</Text>
+      </TouchableOpacity>
+
+      {/* Liste */}
+      <FlatList
+        data={categorie}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={RenderItem}
+        contentContainerStyle={styles.list}
+        ListEmptyComponent={
           <View style={styles.empty}>
-              <Ionicons name='location-outline' size={50} color='#ccc'/>
-              <Text style={styles.emptyText}>Aucune catégorie enregistrée</Text>
+            <Ionicons name="pricetags-outline" size={50} color="#D1D5DB" />
+            <Text style={styles.emptyText}>Aucune catégorie enregistrée</Text>
           </View>
-         }
-        />
-       {/** Modal ajout et modification */}
-       
-       <Modal
+        }
+      />
+
+      {/* Modal ajout et modification */}
+      <Modal
         animationType="slide"
         transparent={true}
         visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
-       >
-       <View style={styles.modalOverlay}>
-       <View style={styles.modalContent}>
-         <Text style={styles.modalTitle}>
-          {modalMode === 'add' ? 'Ajouter une catégorie' : 'Modifier une catégorie'}
-         </Text>
-         <Text style={styles.inputLabel}>Nom de la Catégorie*</Text>
-         <TextInput style={styles.input} placeholder="Ex: Santé" value={nom} onChangeText={setNom} />
-       
-         <Text style={styles.inputLabel}>Description de la caégorie *</Text>
-         <TextInput style={styles.input}  value={description} onChangeText={setDescription} />
-  
-       <View style={styles.modalButtons}>
-          <TouchableOpacity
-          style={[styles.modalButtons, styles.cancelButton]}
-          onPress={() => setModalVisible(false)}
-          >
-         <Text style={styles.cancelButtonText}>Annuler</Text>
-         </TouchableOpacity>
-        <TouchableOpacity
-         style={[styles.modalButtons, styles.saveButton]}
-        onPress={modalMode === 'add' ? AddCategorie : EditCategorie}
-        >
-         <Text style={styles.saveButtonText}>
-          {modalMode === 'add' ? 'ajouter' : 'modifier'}
-         </Text>
-        </TouchableOpacity>
-  
-       </View>
-       </View>
-       </View>
-       </Modal>
-      </SafeAreaView>
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {modalMode === 'add' ? 'Ajouter une catégorie' : 'Modifier une catégorie'}
+            </Text>
+            <Text style={styles.inputLabel}>Nom de la catégorie *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: Santé"
+              value={nom}
+              onChangeText={setNom}
+            />
+
+            <Text style={styles.inputLabel}>Description</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: Services de santé et bien-être"
+              value={description}
+              onChangeText={setDescription}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.cancelButtonText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={modalMode === 'add' ? AddCategorie : EditCategorie}
+              >
+                <Text style={styles.saveButtonText}>
+                  {modalMode === 'add' ? 'Ajouter' : 'Modifier'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
+// ===== STYLES - MÊME STRUCTURE QUE LES AUTRES PAGES =====
 const styles = StyleSheet.create({
   container: {
-    flex: 1 ,
-    backgroundColor:'#f5f5f5' ,
+    flex: 1,
+    backgroundColor: '#F9FAFB',
   },
-   header: {
-    padding: 20,
-    backgroundColor: '#fff',
+
+  // Header
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#F3F4F6',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#111827',
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 14,
-    color: '#95a5a6',
-    marginTop: 2,
+    color: '#6B7280',
+    marginLeft: 40,
   },
+
+  // Bouton Ajouter
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#007BFF',
-    margin: 15,
-    padding: 14,
-    borderRadius: 12,
     justifyContent: 'center',
     gap: 8,
-  },
-  addButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  list: {
-    paddingHorizontal: 15,
-    paddingBottom: 20,
-  },
-card: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: '#2563EB',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 4,
+    paddingVertical: 12,
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    shadowColor: '#000',
+    shadowColor: '#2563EB',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 2,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    paddingTop: 8,
+  },
+
+  // Card
+  card: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
     alignItems: 'center',
   },
+
+  // COLONNE GAUCHE - Infos
   cardContent: {
     flex: 1,
   },
- cardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2c3e50',
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  cardInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
   },
   cardSubtitle: {
     fontSize: 14,
-    color: '#7f8c8d',
-    marginTop: 2,
+    color: '#6B7280',
   },
   cardId: {
     fontSize: 12,
-    color: '#95a5a6',
-    marginTop: 2,
+    color: '#9CA3AF',
   },
+
+  // COLONNE DROITE - Actions avec couleurs
   cardActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 4,
+    alignItems: 'center',
+    marginLeft: 12,
   },
   actionButton: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  editButton: {
-    backgroundColor: '#ffc107',
+  actionEdit: {
+    backgroundColor: '#e4f3e4',
   },
-  deleteButton: {
-    backgroundColor: '#e74c3c',
+  actionDelete: {
+    backgroundColor: '#FEF2F2',
   },
+
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F9FAFB',
   },
   empty: {
     alignItems: 'center',
@@ -338,9 +394,10 @@ card: {
   },
   emptyText: {
     fontSize: 16,
-    color: '#95a5a6',
-    marginTop: 10,
+    color: '#9CA3AF',
+    marginTop: 12,
   },
+
   // Modal
   modalOverlay: {
     flex: 1,
@@ -348,7 +405,7 @@ card: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-   modalContent: {
+  modalContent: {
     backgroundColor: '#fff',
     borderRadius: 20,
     padding: 24,
@@ -358,7 +415,7 @@ card: {
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#111827',
     marginBottom: 16,
   },
   inputLabel: {
@@ -377,7 +434,7 @@ card: {
     marginBottom: 12,
     color: '#2c3e50',
   },
-   modalButtons: {
+  modalButtons: {
     flexDirection: 'row',
     gap: 10,
     marginTop: 8,
@@ -392,7 +449,7 @@ card: {
     backgroundColor: '#f0f0f0',
   },
   saveButton: {
-    backgroundColor: '#007BFF',
+    backgroundColor: '#2563EB',
   },
   cancelButtonText: {
     color: '#2c3e50',
@@ -401,6 +458,5 @@ card: {
   saveButtonText: {
     color: '#ffffff',
     fontWeight: 'bold',
-    
   },
-})
+});

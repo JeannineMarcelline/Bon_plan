@@ -129,7 +129,7 @@ export default function ProDashbordScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => navigation.navigate('MesVehicules')}
+            onPress={() => navigation.navigate('AddVehicle')}
           >
             <Ionicons name="list-outline" size={24} color="#28a745" />
             <Text style={styles.menuItemText}>Mes véhicules</Text>

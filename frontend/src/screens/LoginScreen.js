@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert, 
+   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {useAuth} from '../context/AuthContext';
@@ -97,7 +98,7 @@ return(
     <SafeAreaView style={styles.container}>
      <View style={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>🏝️ Bon Plan</Text>
+        <Image source={require('../../assets/bonPlan.jpg')} style={styles.logo} />
           <Text style={styles.subtitle}>Connectez-vous</Text>
       </View>
       <View style={styles.form}>
@@ -157,6 +158,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 20,
+  },
+   logo: {
+    width: 85,
+    height: 85,
+    resizeMode: 'contain',
   },
   header: {
     alignItems: 'center',

@@ -8,6 +8,7 @@ import db from '../database/database';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'react-native';
+import * as Location from 'expo-location';
 
 
 export default function AddCompanyScreen({navigation}){
@@ -30,6 +31,22 @@ export default function AddCompanyScreen({navigation}){
 
     const [loading, setLoading] = useState(false);
     const[loadingData, setLoadingData] = useState(true);
+
+    const geocodeAddress = async (address) => {
+  try {
+    const result = await Location.geocodeAsync(address);
+    if (result.length > 0) {
+      return {
+        latitude: result[0].latitude,
+        longitude: result[0].longitude,
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Erreur de géocodage:', error);
+    return null;
+  }
+};
 
     useEffect(() => {
         const loadData = async () => {
@@ -96,10 +113,16 @@ export default function AddCompanyScreen({navigation}){
       return;
     }
     setLoading(true);
+
+   const coords = await geocodeAddress(adresse);
+   const latitude = coords?.latitude || null;
+   const longitude = coords?.longitude || null;
+   console.log('📍 Coordonnées trouvées :', latitude, longitude);
+   
     try{
     const result = await db.runAsync(
      `INSERT INTO entreprises (nom, description, adresse, telephone, siteweb, logo, 
-     ville_id, categorie_id, utilisateur_id, statutValidation, type_activite) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ville_id, categorie_id, utilisateur_id, statutValidation, type_activite, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
      [
         nom,
         description || '',
@@ -111,7 +134,9 @@ export default function AddCompanyScreen({navigation}){
         categorieId,
         user.id,
       'en_attente',
-      typeActivite
+      typeActivite,
+      latitude,
+      longitude
      ]
     );
     Alert.alert(
