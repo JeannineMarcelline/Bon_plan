@@ -3,11 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -129,7 +129,7 @@ export default function ProDashbordScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => navigation.navigate('AddVehicle')}
+            onPress={() => navigation.navigate('MesVehicules')}
           >
             <Ionicons name="list-outline" size={24} color="#28a745" />
             <Text style={styles.menuItemText}>Mes véhicules</Text>

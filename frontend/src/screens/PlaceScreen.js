@@ -1,185 +1,218 @@
-import React, {useEffect, useState} from 'react'
-import { SafeAreaView } from "react-native-safe-area-context";
-import { 
- Text, 
- View,
- TouchableOpacity, 
- ScrollView,
- StyleSheet,
- Alert, 
- ActivityIndicator,
- } from "react-native";
- import {Ionicons} from "@expo/vector-icons";
- import {useRoute, useNavigation} from '@react-navigation/native';
- import db from '../database/database';
- import { useAuth } from '../context/AuthContext';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  SafeAreaView,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import db from '../database/database';
+import { useAuth } from '../context/AuthContext';
 
+export default function PlacesScreen() {
+  const route = useRoute();
+  const navigation = useNavigation();
+  const { idVehicule } = route.params;
+  const { user } = useAuth();
 
-export default function PlaceScreen () {
+  const [places, setPlaces] = useState([]);
+  const [vehicule, setVehicule] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedPlace, setSelectedPlace] = useState(null);
+  const [reserving, setReserving] = useState(false);
 
- const route = useRoute();
- const navigation = useNavigation();
- 
- const {idVehicule} = route.params
- const {user} = useAuth();
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // 1. Récupérer les infos du véhicule
+        const vehiculeResult = await db.getAllAsync(
+          'SELECT * FROM vehicules WHERE id_vehicule = ?',
+          [idVehicule]
+        );
+        if (vehiculeResult.length > 0) {
+          setVehicule(vehiculeResult[0]);
+        }
 
- const [places, setPlaces] = useState([]);
- const [vehicule, setVehicule] = useState(null);
- const [loading, setLoading] = useState(true);
- const [selectedPlace, setSelectedPlace] = useState(null);
- const [reserving, setReserving] = useState(false);
- 
-
- useEffect(() => {
-
-  const loadData = async () => {
-  try{
-    const vehiculeResult = await db.getAllAsync('SELECT * FROM vehicules WHERE id_vehicule = ? ',  [idVehicule]);
-    if(vehiculeResult.length > 0 ) {
-        setVehicule(vehiculeResult[0]);
-    }
-    const placeResult = await db.getAllAsync('SELECT * FROM places WHERE id_vehicule = ? ORDER BY numero_place', [idVehicule]);
-    setPlaces(placeResult);
-  }catch(error){
-  console.error('Erreur de chargement de place', error);
-  Alert.alert('Erreur', 'erreur de chargement de places');
-  }finally{
-    setLoading(false);
-  }
-  };
-  loadData();
-
- }, [idVehicule]);
-
- // Reserver une place 
-
- const handleReservation = async () => {
-
-    if(!selectedPlace) {
-        Alert.alert('Erreur', 'Veuillez selectionner une place');
-        return;
-    }
-
-    if(!user) {
-        Alert.alert('Erreur', 'connecter vous d\'abord avant de reserver ');
-        return;
-    }
-   setReserving(true);
-
-   try{
-    //inserer reservation
-    await db.runAsync(
-   `INSERT INTO reservation_transport (id_utilisateur, id_vehicule, id_place, horaire_reservation, date_reservation ) VALUES (?, ?, ?, ?, ?) ` ,
-   [
-     user.id,
-     idVehicule,
-     selectedPlace.id_place,
-     vehicule.heure_depart || '08:00', 
-     new Date().toISOString().split('T')[0],
-   ]
-);
-   // marquer la place reserver
-   await db.runAsync(
-    `UPDATE places SET statut = ?  WHERE id_place = ? `,
-    ['reservee', selectedPlace.id_place]
-);
-
-Alert.alert(
-    'Réservation confirmée ! ', 
-    `Vous avez réservé la place ${selectedPlace.numero_place} (${selectedPlace.position})`,
-    [
-      {
-       text: 'OK',
-       onPress: () => navigation.navigate('MesReservations'),
+        // 2. Récupérer les places
+        const placesResult = await db.getAllAsync(
+          'SELECT * FROM places WHERE id_vehicule = ? ORDER BY numero_place',
+          [idVehicule]
+        );
+        setPlaces(placesResult);
+      } catch (error) {
+        console.error('Erreur chargement places:', error);
+        Alert.alert('Erreur', 'Impossible de charger les places');
+      } finally {
+        setLoading(false);
       }
-    ]
- );
+    };
+    loadData();
+  }, [idVehicule]);
 
-// Rafraichir la place
+  const handleReservation = async () => {
+    if (!selectedPlace) {
+      Alert.alert('Erreur', 'Veuillez sélectionner une place');
+      return;
+    }
 
-  const UpdatePlace = await db.getAllAsync('SELECT * FROM places WHERE id_vehicule = ? ORDER BY numero_place ', [idVehicule]); 
-  setPlaces(UpdatePlace);
-  setSelectedPlace(null);
-   }catch(error){
-     console.error('Erreur de réservation: ', error);
-     Alert.alert('Erreur', 'Impossible de reserver cette place ');
-   }finally{
-    setReserving(false);
-   }
- };
+    if (!user) {
+      Alert.alert('Erreur', 'Vous devez être connecté pour réserver');
+      return;
+    }
 
- if(loading){
-    return(
-        <SafeAreaView style={styles.center}>
-            <ActivityIndicator size='large' color="#007BFF"/>
-        </SafeAreaView>
-    );
- }
+    setReserving(true);
+    try {
+      await db.runAsync(
+        `INSERT INTO reservations_transport (id_utilisateur, id_vehicule, id_place, horaire_reservation, date_reservation)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          user.id,
+          idVehicule,
+          selectedPlace.id_place,
+          vehicule.heure_depart || '08:00',
+          new Date().toISOString().split('T')[0],
+        ]
+      );
 
- return(
-  <SafeAreaView style={styles.container}>
-    <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()}>
-                 <Ionicons name="arrow-back" size={24} color="#2c3e50" />
-            </TouchableOpacity>
-            <Text style={styles.title}>🚐 {vehicule?.nom || 'Véhicule'}</Text>
-        </View>
+      await db.runAsync(
+        'UPDATE places SET statut = ? WHERE id_place = ?',
+        ['reservee', selectedPlace.id_place]
+      );
 
-        {vehicule && (
-             <View style={styles.infoCard}>
-                <Text style={styles.infoText}>{vehicule.date_depart} à {vehicule.heure_depart}</Text>
-                <Text style={styles.infoText}>{vehicule.prix_place} Ar / place </Text>
-                <Text style={styles.infoText}>{vehicule.ville_depart} → {vehicule.ville_arrivee} </Text>
-             </View>
-        )}
+      Alert.alert(
+        '✅ Réservation confirmée !',
+        `Vous avez réservé la place ${selectedPlace.numero_place}`,
+        [{ text: 'OK', onPress: () => navigation.navigate('MesReservations') }]
+      );
 
-   {/** plan de place  */}
+      // Rafraîchir les places
+      const updatedPlaces = await db.getAllAsync(
+        'SELECT * FROM places WHERE id_vehicule = ? ORDER BY numero_place',
+        [idVehicule]
+      );
+      setPlaces(updatedPlaces);
+      setSelectedPlace(null);
+    } catch (error) {
+      console.error('Erreur réservation:', error);
+      Alert.alert('Erreur', 'Impossible de réserver la place');
+    } finally {
+      setReserving(false);
+    }
+  };
 
-   <Text style={styles.SectionTitle}>Choisissez votre place</Text>
-    <View style={styles.grid}>
-        {places.map((place) => {
-           const isReserved = place.statut === 'reservee';
-           const isSelected = selectedPlace?.id_place === place.id_place;
-           return(
-            <TouchableOpacity
+  // ===== GÉNÉRER LE PLAN AVEC CHAUFFEUR + 4 COLONNES =====
+  const renderPlan = () => {
+  const nbCoteChauffeur = vehicule?.places_cote_chauffeur || 0;
+  const totalPlaces = places.length;
+
+  // 1. Séparer les places côté chauffeur et les autres
+  const placesCoteChauffeur = places.filter(p => p.numero_place <= nbCoteChauffeur);
+  const autresPlaces = places.filter(p => p.numero_place > nbCoteChauffeur);
+
+  // 2. Construire les lignes
+  const rows = [];
+
+  // 2.1 Ligne du chauffeur
+  const firstRow = [];
+  firstRow.push({ type: 'chauffeur', key: 'chauffeur' });
+  placesCoteChauffeur.forEach(place => {
+    firstRow.push({ type: 'place', key: place.id_place, place });
+  });
+  rows.push(firstRow);
+
+  // 2.2 Lignes des autres places (par groupes de 4)
+  for (let i = 0; i < autresPlaces.length; i += 4) {
+    const group = autresPlaces.slice(i, i + 4);
+    const row = group.map(place => ({
+      type: 'place',
+      key: place.id_place,
+      place,
+    }));
+    rows.push(row);
+  }
+
+  // 3. Rendu des lignes
+  return rows.map((row, rowIndex) => (
+    <View key={rowIndex} style={styles.row}>
+      {row.map((item) => {
+        if (item.type === 'chauffeur') {
+          return (
+            <View key="chauffeur" style={[styles.placeButton, styles.chauffeurButton]}>
+              <Ionicons name="person" size={20} color="#fff" />
+              <Text style={styles.chauffeurText}>Chauffeur</Text>
+            </View>
+          );
+        }
+
+        const place = item.place;
+        const isReserved = place.statut === 'reservee';
+        const isSelected = selectedPlace?.id_place === place.id_place;
+
+        return (
+          <TouchableOpacity
             key={place.id_place}
             style={[
-                styles.placeButton,
-                isReserved && styles.placeReserved,
-                isSelected && styles.placeSelected,
-                !isReserved && !isSelected && styles.placeAvailable,
+              styles.placeButton,
+              isReserved && styles.placeReserved,
+              isSelected && styles.placeSelected,
+              !isReserved && !isSelected && styles.placeAvailable,
             ]}
             onPress={() => {
-             if(isReserved){
-                Alert.alert('Place réserver', 'cette place est déjà réservée');
+              if (isReserved) {
+                Alert.alert('Place réservée', 'Cette place est déjà réservée');
                 return;
-             }
+              }
               setSelectedPlace(isSelected ? null : place);
             }}
             disabled={isReserved}
-            >
-            <Text
-               style={[
-                    styles.placeNumber,
-                    isReserved && styles.placeNumberReserved,
-                    isSelected && styles.placeNumberSelected,
-                  ]}
-              >
-                {place.numero_place}
-            </Text>
-            <Text style={styles.placePosition}>{place.position} </Text>
-                   {isReserved && (
-                  <Ionicons name="lock-closed" size={14} color="#fff" style={styles.lockIcon} />
-                )}
-                {isSelected && (
-                  <Ionicons name="checkmark-circle" size={14} color="#fff" style={styles.checkIcon} />
-                )}
-            </TouchableOpacity>
-           );
-        })}
+          >
+            <Text style={styles.placeNumber}>{place.numero_place}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
+  ));
+};
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator size="large" color="#1E3A5F" />
+      </SafeAreaView>
+    );
+  }
 
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* En-tête */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#1A1A2E" />
+          </TouchableOpacity>
+          <Text style={styles.title}>🚐 {vehicule?.nom || 'Véhicule'}</Text>
+        </View>
+
+        {/* Infos du véhicule */}
+        {vehicule && (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoText}>📅 {vehicule.date_depart} à {vehicule.heure_depart}</Text>
+            <Text style={styles.infoText}>💰 {vehicule.prix_place} Ar / place</Text>
+            <Text style={styles.infoText}>📍 {vehicule.ville_depart} → {vehicule.ville_arrivee}</Text>
+          </View>
+        )}
+
+        {/* Plan des places */}
+        <Text style={styles.sectionTitle}>Choisissez votre place</Text>
+        <View style={styles.gridContainer}>
+          {renderPlan()}
+        </View>
+
+        {/* Légende */}
         <View style={styles.legend}>
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: '#28a745' }]} />
@@ -195,8 +228,7 @@ Alert.alert(
           </View>
         </View>
 
-        {/** bouton de reservation */}
-
+        {/* Bouton de réservation */}
         {selectedPlace && (
           <TouchableOpacity
             style={styles.reserveButton}
@@ -208,17 +240,17 @@ Alert.alert(
             </Text>
           </TouchableOpacity>
         )}
-    </ScrollView>
-  </SafeAreaView>
- );  
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-     container: { flex: 1, backgroundColor: '#f5f5f5' },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  scrollContent: { padding: 16, paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  title: { fontSize: 20, fontWeight: 'bold', color: '#2c3e50', marginLeft: 12 },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#1A1A2E', marginLeft: 12 },
   infoCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -230,46 +262,56 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-   infoText: { fontSize: 14, color: '#555', marginVertical: 2 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50', marginBottom: 12 },
-  grid: {
+  infoText: { fontSize: 14, color: '#6C757D', marginVertical: 2 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 12 },
+  gridContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 12,
-    marginBottom: 16,
+    marginBottom: 8,
+    gap: 8,
   },
   placeButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    margin: 4,
     borderWidth: 2,
     borderColor: 'transparent',
   },
-    placeAvailable: { backgroundColor: '#28a745' },
+  placeAvailable: { backgroundColor: '#28a745' },
   placeReserved: { backgroundColor: '#dc3545' },
   placeSelected: { backgroundColor: '#007BFF', borderColor: '#fff', borderWidth: 3 },
-  placeNumber: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
-  placeNumberReserved: { color: '#fff' },
-  placeNumberSelected: { color: '#fff' },
-  placePosition: { fontSize: 10, color: '#fff', opacity: 0.8, marginTop: 2 },
-  lockIcon: { position: 'absolute', top: 4, right: 4 },
-  checkIcon: { position: 'absolute', top: 4, right: 4 },
-  legend: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 16 },
-   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  placeNumber: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+  chauffeurButton: {
+    backgroundColor: '#6C757D',
+    borderWidth: 2,
+    borderColor: '#6C757D',
+    width: 80,
+    flexDirection: 'row',
+    gap: 4,
+  },
+  chauffeurText: { fontSize: 10, color: '#fff', fontWeight: 'bold' },
+  legend: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginVertical: 16 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 12, height: 12, borderRadius: 6 },
   legendText: { fontSize: 12, color: '#555' },
   reserveButton: {
-    backgroundColor: '#007BFF',
+    backgroundColor: '#1E3A5F',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
   },
   reserveButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-
-
-})
+});

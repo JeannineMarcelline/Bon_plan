@@ -26,7 +26,7 @@ import CompanyVehiculeScreen from '../screens/CompanyVehiculeScreen';
 import PlaceScreen from '../screens/PlaceScreen';
 import MesReservationsScreen from '../screens/MesReservationsScreen';
 import AddVehiculeScreen from '../screens/AddVehiculeScreen';
-
+import MesVehiculesScreen from '../screens/MesVehiculesScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -42,8 +42,10 @@ function HomeStack() {
       <Stack.Screen  name="ProDashbord" component={ProDashbordScreen}/>
       <Stack.Screen  name="CompanyVehicules" component={CompanyVehiculeScreen}/>
      <Stack.Screen  name='Places' component={PlaceScreen}/>
-    <Stack.Screen name="MesReservations" component={MesReservationsScreen} /> 
-    <Stack.Screen name="AddVehicle" component={AddVehiculeScreen} />
+     <Stack.Screen name="MesReservations" component={MesReservationsScreen} /> 
+     <Stack.Screen name="AddVehicle" component={AddVehiculeScreen} />
+     <Stack.Screen name="MesVehicules" component={MesVehiculesScreen} />
+
     </Stack.Navigator>
   );
 }

@@ -71,10 +71,12 @@ export const initDatabase = async () => {
       id_vehicule INTEGER PRIMARY KEY AUTOINCREMENT,
       nom TEXT NOT NULL,
       type TEXT NOT NULL,
+      photo TEXT,
       capacite INTEGER NOT NULL,
       prix_place REAL NOT NULL,
       ville_depart TEXT NOT NULL,
       ville_arrivee TEXT NOT NULL,
+      places_cote_chauffeur INTEGER DEFAULT 0,
       date_depart TEXT NOT NULL,
       heure_depart TEXT NOT NULL,
       id_entreprise INTEGER NOT NULL,
@@ -85,7 +87,7 @@ export const initDatabase = async () => {
       id_place INTEGER PRIMARY KEY AUTOINCREMENT,
       id_vehicule INTEGER NOT NULL,
       numero_place INTEGER NOT NULL,
-      position TEXT NOT NULL,
+      position TEXT DEFAULT 'standard',
       statut TEXT NOT NULL CHECK (statut IN ('disponible', 'reservee')),
       FOREIGN KEY (id_vehicule) REFERENCES vehicules(id_vehicule)
       );
@@ -116,7 +118,9 @@ export const initDatabase = async () => {
     `);
 
     // ===== DONNÉES DE TEST TRANSPORT =====
-   
+    
+
+
 const entreprise = await db.getAllAsync('SELECT id FROM entreprises WHERE id = 1');
 if (entreprise.length === 0) {
   console.log('⚠️ Entreprise id=1 non trouvée, création...');
@@ -129,27 +133,8 @@ if (entreprise.length === 0) {
   var idEntreprise = entreprise[0].id;
 }
 
-await db.runAsync('DELETE FROM vehicules WHERE id_entreprise = ?', [idEntreprise]);
 
-await db.runAsync(`
-  INSERT INTO vehicules (nom, type, capacite, prix_place, ville_depart, ville_arrivee, date_depart, heure_depart, id_entreprise)
-  VALUES ('Minibus 7 places', 'minibus', 7, 15000, 'Antananarivo', 'Fianarantsoa', '2026-07-25', '08:00', ?)
-`, [idEntreprise]);
 
-const vehicule = await db.getAllAsync('SELECT id_vehicule FROM vehicules ORDER BY id_vehicule DESC LIMIT 1');
-if (vehicule.length > 0) {
-  const idVehicule = vehicule[0].id_vehicule;
-  await db.runAsync('DELETE FROM places WHERE id_vehicule = ?', [idVehicule]);
-  for (let i = 1; i <= 7; i++) {
-    let position = 'couloir';
-    if (i === 1 || i === 2 || i === 5 || i === 6) position = 'fenetre';
-    await db.runAsync(`
-      INSERT INTO places (id_vehicule, numero_place, position, statut)
-      VALUES (?, ?, ?, 'disponible')
-    `, [idVehicule, i, position]);
-  }
-  console.log('✅ 7 places insérées');
-}
 // ===== FIN DONNÉES DE TEST =====
 
     // 3. Admin par défaut
