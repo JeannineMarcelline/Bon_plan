@@ -132,8 +132,12 @@ export default function AdminEntrepriseScreen() {
             <Text style={styles.statutText}>{getStatutLabel(item.statutValidation)}</Text>
           </View>
           
-          {/* MODIFIE: Actions avec boutons textes selon le statut */}
-          <View style={styles.cardActions}>
+        
+        </View>
+      </View>
+
+  {/* MODIFIE: Actions avec boutons textes selon le statut */}
+       <View style={styles.cardActions}>
             {item.statutValidation === 'valide' && (
               <TouchableOpacity
                 style={[styles.actionButton, styles.actionDesactiver]}
@@ -173,8 +177,6 @@ export default function AdminEntrepriseScreen() {
               </TouchableOpacity>
             )}
           </View>
-        </View>
-      </View>
 
       {/* LIGNE 2: Infos en 1 ligne avec icônes Ionicons */}
       <View style={styles.cardInfo}>

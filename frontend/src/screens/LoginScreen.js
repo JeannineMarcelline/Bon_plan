@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert, 
-   Image,
+  Image,
+  ScrollView,
+  KeyboardAvoidingView, Platform 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {useAuth} from '../context/AuthContext';
@@ -68,35 +70,20 @@ const handleLogin = async () => {
   }
 };
 
-
-
-{/** const handleLogin = async() => {
-    if(!email || !password) {
-        Alert.alert('Erreur', 'Veuillez remplir tous les champs');
-        return;
-    }
-    setLoading(true);
-    try{
-     const result = await login (email, password);
-     if(result.success){
-        Alert.alert(
-            'Connexion réussie', 
-            `Bonjour ${result.user.nom} !`,
-          [{ text: 'OK', onPress: () => navigation.navigate('Home') }]
-        );
-     }else{
-        Alert.alert('Erreur', result.error);
-     }
-    }catch(error){
-       Alert.alert('Erreur', 'Une erreur est survenue')
-    }finally{
-        setLoading(false);
-    }
-};
-*/}
 return(
     <SafeAreaView style={styles.container}>
-     <View style={styles.content}>
+    <KeyboardAvoidingView 
+    style={{ flex: 1 }} 
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+  <ScrollView 
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
+
+ <View style={styles.content}>
       <View style={styles.header}>
         <Image source={require('../../assets/bonPlan.jpg')} style={styles.logo} />
           <Text style={styles.subtitle}>Connectez-vous</Text>
@@ -145,7 +132,12 @@ return(
 
       </View>
      </View>
-    </SafeAreaView>
+
+    </ScrollView>
+
+
+  </KeyboardAvoidingView>
+</SafeAreaView>
 );
 }
 

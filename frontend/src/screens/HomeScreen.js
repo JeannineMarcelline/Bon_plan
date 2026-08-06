@@ -14,7 +14,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import categories from '../data/mockData'
 import db from '../database/database';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -23,6 +22,7 @@ export default function HomeScreen() {
 const [entreprises, setEntreprises] = useState([]);
 const [loading, setLoading] = useState(true);
 const [selectedCategory, setSelectedCategory] = useState(null);
+const [categoriesList, setCategoriesList] = useState([]);
 
 const navigation = useNavigation();
 const [searchText, setSearchText] = useState('');
@@ -56,6 +56,22 @@ return matchText && matchCategory && matchVille && matchNote && matchPrix;
 
 })
 
+const loadCategories = async () => {
+  try {
+    const result = await db.getAllAsync('SELECT * FROM categories ORDER BY nom');
+    setCategoriesList(result);
+  } catch (error) {
+    console.error('Erreur chargement catégories:', error);
+  }
+}; 
+
+useFocusEffect(
+  React.useCallback(() => {
+    loadEntreprises();
+    loadVilles();
+    loadCategories(); // ← AJOUTE CETTE LIGNE
+  }, [])
+);
   const renderCategory = ({ item }) => (
     <TouchableOpacity style={styles.categoryItem}>
       <View style={styles.categoryIcon}>
@@ -150,7 +166,7 @@ return matchText && matchCategory && matchVille && matchNote && matchPrix;
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
       
-      {/* Header avec logo et barre de recherche style Airbnb */}
+      {/* Header avec logo et barre de recherche */}
       <View style={styles.header}>
         <Image source={require('../../assets/bonPlan.jpg')} style={styles.logo} />
         <View style={styles.searchContainer}>
@@ -183,32 +199,20 @@ return matchText && matchCategory && matchVille && matchNote && matchPrix;
             <Text style={[styles.categoryButtonText, !selectedCategory && styles.categoryActiveText]}>Tous</Text>
             {!selectedCategory && <View style={styles.categoryActiveIndicator} />}
           </TouchableOpacity>
-          
-          {['Hôtels', 'Restaurants', 'Transport', 'Artisans', 'Agriculture'].map((cat) => (
-            <TouchableOpacity
-              key={cat}
-              style={[styles.categoryButton, selectedCategory === cat && styles.categoryActive]}
-              onPress={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
-            >
-              <Text style={[styles.categoryButtonText, selectedCategory === cat && styles.categoryActiveText]}>
-                {cat}
-              </Text>
-              {selectedCategory === cat && <View style={styles.categoryActiveIndicator} />}
-            </TouchableOpacity>
-          ))}
+         {categoriesList.map((cat) => (
+  <TouchableOpacity
+    key={cat.id}
+    style={[styles.categoryButton, selectedCategory === cat.nom && styles.categoryActive]}
+    onPress={() => setSelectedCategory(selectedCategory === cat.nom ? null : cat.nom)}
+  >
+    <Text style={[styles.categoryButtonText, selectedCategory === cat.nom && styles.categoryActiveText]}>
+      {cat.icone} {cat.nom}
+    </Text>
+  </TouchableOpacity>
+))}
+       
         </ScrollView>
       </View>
-
-      {/* Section Populaires améliorée 
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionHeaderLeft}>
-          <View style={styles.sectionIcon} />
-          <Text style={styles.sectionTitle}>Populaires</Text>
-        </View>
-        <TouchableOpacity>
-          <Text style={styles.seeAll}>Voir tout →</Text>
-        </TouchableOpacity>
-      </View>*/}
 
       {/* Liste des entreprises améliorée */}
       <FlatList

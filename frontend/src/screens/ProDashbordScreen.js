@@ -138,7 +138,7 @@ export default function ProDashbordScreen({ navigation }) {
 
           <TouchableOpacity
             style={[styles.menuItem, styles.lastMenuItem]}
-            onPress={() => navigation.navigate('MesReservationsTransport')}
+            onPress={() => navigation.navigate('ProReservation')}
           >
             <Ionicons name="calendar-outline" size={24} color="#ffc107" />
             <Text style={styles.menuItemText}>Mes réservations</Text>

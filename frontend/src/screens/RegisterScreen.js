@@ -7,11 +7,14 @@ import {
   StyleSheet,
   Alert,
   ScrollView,
-  Image
+  Image,
+  KeyboardAvoidingView, 
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+
 
 export default function RegisterScreen({ navigation }) {
 
@@ -73,7 +76,16 @@ export default function RegisterScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView 
+          style={{ flex: 1 }} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+        <ScrollView 
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
         <View style={styles.header}>
           <Image source={require('../../assets/bonPlan.jpg')} style={styles.logo} />
           <Text style={styles.subtitle}>Créer un compte</Text>
@@ -197,7 +209,8 @@ export default function RegisterScreen({ navigation }) {
             </Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+         </ScrollView>
+        </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

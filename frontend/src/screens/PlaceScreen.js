@@ -21,10 +21,19 @@ export default function PlacesScreen() {
   const { user } = useAuth();
 
   const [places, setPlaces] = useState([]);
+  const [selectedPlace, setSelectedPlace] = useState([]);
   const [vehicule, setVehicule] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPlace, setSelectedPlace] = useState(null);
   const [reserving, setReserving] = useState(false);
+
+  const togglePlace = (place) => {
+    const isSelected = selectedPlace.some(p => p.id_place === place.id_place);
+    if(isSelected){
+      setSelectedPlace(selectedPlace.filter(p => p.id_place !== place.id_place));
+    }else{
+      setSelectedPlace([...selectedPlace, place]);
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -55,7 +64,7 @@ export default function PlacesScreen() {
   }, [idVehicule]);
 
   const handleReservation = async () => {
-    if (!selectedPlace) {
+    if (!selectedPlace.length === 0) {
       Alert.alert('Erreur', 'Veuillez sélectionner une place');
       return;
     }
@@ -64,31 +73,47 @@ export default function PlacesScreen() {
       Alert.alert('Erreur', 'Vous devez être connecté pour réserver');
       return;
     }
-
     setReserving(true);
     try {
-      await db.runAsync(
-        `INSERT INTO reservations_transport (id_utilisateur, id_vehicule, id_place, horaire_reservation, date_reservation)
-         VALUES (?, ?, ?, ?, ?)`,
-        [
-          user.id,
-          idVehicule,
-          selectedPlace.id_place,
-          vehicule.heure_depart || '08:00',
-          new Date().toISOString().split('T')[0],
-        ]
-      );
+      //verifier que toute les places sont disponible
+      for(const place of selectedPlace) {
+         const check = await db.getAllAsync(
+          'SELECT statut FROM places WHERE id_place = ?',
+          [place.id_place]
+         );
+         if(check[0]?.statut === 'reservee'){
+          Alert.alert('Désolé', `la place ${place.numero_place} vient d'être réservée`);
+          setReserving(false);
+          return;
+         }
+      }
+      
+    const totalPrix = selectedPlace.length * vehicule.prix_place;
 
-      await db.runAsync(
+    const result = await db.runAsync(
+      `INSERT INTO reservation_transport (id_utilisateur, id_vehicule, date_reservation, prix_total, statut)
+       VALUES (?, ?, ?, ?, ?)`, [user.id, idVehicule, new Date().toISOString().split('T')[0], totalPrix, 'confirmee']
+    );
+
+    const idReservation = result.lastInsertRowId;
+
+     for(const place of selectedPlace) {
+      await db.runAsync(`INSERT INTO reservation_places (id_reservation, id_place)
+         VALUES (?, ?)`, [ idReservation, place.id_place]
+        );
+
+        await db.runAsync(
         'UPDATE places SET statut = ? WHERE id_place = ?',
-        ['reservee', selectedPlace.id_place]
+        ['reservee', place.id_place]
       );
+    }
 
       Alert.alert(
-        '✅ Réservation confirmée !',
-        `Vous avez réservé la place ${selectedPlace.numero_place}`,
-        [{ text: 'OK', onPress: () => navigation.navigate('MesReservations') }]
+        'Réservation confirmée!',
+        `${selectedPlace.length} places réservée - Total : ${totalPrix} Ar`,
+         [{ text : 'OK', onPress: () => navigation.navigate('MesReservations')}]
       );
+
 
       // Rafraîchir les places
       const updatedPlaces = await db.getAllAsync(
@@ -96,7 +121,7 @@ export default function PlacesScreen() {
         [idVehicule]
       );
       setPlaces(updatedPlaces);
-      setSelectedPlace(null);
+      setSelectedPlace([]);
     } catch (error) {
       console.error('Erreur réservation:', error);
       Alert.alert('Erreur', 'Impossible de réserver la place');
@@ -114,7 +139,6 @@ export default function PlacesScreen() {
   const placesCoteChauffeur = places.filter(p => p.numero_place <= nbCoteChauffeur);
   const autresPlaces = places.filter(p => p.numero_place > nbCoteChauffeur);
 
-  // 2. Construire les lignes
   const rows = [];
 
   // 2.1 Ligne du chauffeur
@@ -151,7 +175,7 @@ export default function PlacesScreen() {
 
         const place = item.place;
         const isReserved = place.statut === 'reservee';
-        const isSelected = selectedPlace?.id_place === place.id_place;
+        const isSelected = selectedPlace.some(p => p.id_place === place.id_place);
 
         return (
           <TouchableOpacity
@@ -167,7 +191,7 @@ export default function PlacesScreen() {
                 Alert.alert('Place réservée', 'Cette place est déjà réservée');
                 return;
               }
-              setSelectedPlace(isSelected ? null : place);
+              togglePlace(place);
             }}
             disabled={isReserved}
           >
@@ -228,18 +252,26 @@ export default function PlacesScreen() {
           </View>
         </View>
 
-        {/* Bouton de réservation */}
-        {selectedPlace && (
-          <TouchableOpacity
-            style={styles.reserveButton}
-            onPress={handleReservation}
-            disabled={reserving}
-          >
-            <Text style={styles.reserveButtonText}>
-              {reserving ? 'Réservation en cours...' : `✅ Réserver la place ${selectedPlace.numero_place}`}
-            </Text>
-          </TouchableOpacity>
-        )}
+        {selectedPlace.length > 0 && (
+     <View style={styles.totalContainer}>
+    <Text style={styles.totalText}>
+      {selectedPlace.length} place(s) sélectionnée(s)
+    </Text>
+    <Text style={styles.totalPrice}>
+      Total : {selectedPlace.length * vehicule.prix_place} Ar
+    </Text>
+    <TouchableOpacity
+      style={styles.reserveButton}
+      onPress={handleReservation}
+      disabled={reserving}
+    >
+      <Text style={styles.reserveButtonText}>
+        {reserving ? 'Réservation en cours...' : ` Réserver ${selectedPlace.length} place(s)`}
+      </Text>
+    </TouchableOpacity>
+  </View>
+)}
+ 
       </ScrollView>
     </SafeAreaView>
   );
@@ -314,4 +346,22 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   reserveButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  totalContainer: {
+  backgroundColor: '#f0f4ff',
+  borderRadius: 12,
+  padding: 16,
+  marginTop: 12,
+  alignItems: 'center',
+},
+totalText: {
+  fontSize: 16,
+  color: '#1A1A2E',
+  fontWeight: '500',
+},
+totalPrice: {
+  fontSize: 20,
+  fontWeight: 'bold',
+  color: '#1E3A5F',
+  marginVertical: 6,
+},
 });

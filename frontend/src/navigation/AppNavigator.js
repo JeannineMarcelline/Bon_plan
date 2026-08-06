@@ -27,6 +27,14 @@ import PlaceScreen from '../screens/PlaceScreen';
 import MesReservationsScreen from '../screens/MesReservationsScreen';
 import AddVehiculeScreen from '../screens/AddVehiculeScreen';
 import MesVehiculesScreen from '../screens/MesVehiculesScreen';
+import ProReservation from '../screens/ProReservation';
+import EditVehicule from '../screens/EditVehicule';
+
+
+
+
+
+
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -45,6 +53,8 @@ function HomeStack() {
      <Stack.Screen name="MesReservations" component={MesReservationsScreen} /> 
      <Stack.Screen name="AddVehicle" component={AddVehiculeScreen} />
      <Stack.Screen name="MesVehicules" component={MesVehiculesScreen} />
+     <Stack.Screen name="ProReservation" component={ProReservation} />
+     <Stack.Screen name="EditVehicule" component={EditVehicule} />
 
     </Stack.Navigator>
   );
@@ -75,9 +85,9 @@ function MainTabs() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
           if (route.name === 'Accueil') iconName = focused ? 'home' : 'home-outline';
+          else if (route.name === 'Profil') iconName = focused ? 'person' : 'person-outline';
           else if (route.name === 'Réservations') iconName = focused ? 'calendar' : 'calendar-outline';
           else if (route.name === 'Favoris') iconName = focused ? 'heart' : 'heart-outline';
-          else if (route.name === 'Profil') iconName = focused ? 'person' : 'person-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#007BFF',

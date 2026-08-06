@@ -96,13 +96,19 @@ export const initDatabase = async () => {
       id_reservation INTEGER PRIMARY KEY AUTOINCREMENT,
       id_utilisateur INTEGER NOT NULL,
       id_vehicule INTEGER NOT NULL,
-      id_place INTEGER NOT NULL,
-      horaire_reservation TEXT NOT NULL,
       date_reservation TEXT NOT NULL,
+      prix_total REAL DEFAULT 0,
       statut TEXT DEFAULT 'confirmee',
       FOREIGN KEY (id_utilisateur) REFERENCES utilisateurs(id),
-      FOREIGN KEY (id_vehicule) REFERENCES vehicules(id_vehicule),
-      FOREIGN KEY (id_place) REFERENCES places(id_place)
+      FOREIGN KEY (id_vehicule) REFERENCES vehicules(id_vehicule)
+      );
+
+     CREATE TABLE IF NOT EXISTS reservation_places(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id_reservation INTEGER NOT NULL,
+      id_place INTEGER NOT NULL,
+      FOREIGN KEY (id_reservation) REFERENCES reservation_transport(id_reservation) ON DELETE CASCADE,
+      FOREIGN KEY (id_place) REFERENCES places(id_place) ON DELETE CASCADE
       );
 
      CREATE TABLE IF NOT EXISTS avis (
@@ -118,8 +124,11 @@ export const initDatabase = async () => {
     `);
 
     // ===== DONNÉES DE TEST TRANSPORT =====
-    
 
+{/*await db.runAsync('DELETE FROM reservation_places;');
+await db.runAsync('DELETE FROM reservation_transport;');
+await db.runAsync('UPDATE places SET statut = "disponible" WHERE statut = "reservee";');
+console.log('🧹 Anciennes données nettoyées');*/}
 
 const entreprise = await db.getAllAsync('SELECT id FROM entreprises WHERE id = 1');
 if (entreprise.length === 0) {
@@ -137,6 +146,8 @@ if (entreprise.length === 0) {
 
 // ===== FIN DONNÉES DE TEST =====
 
+
+
     // 3. Admin par défaut
 const adminExists = await db.getAllAsync('SELECT * FROM utilisateurs WHERE role = "admin"');
    if (adminExists.length === 0) {
@@ -146,7 +157,6 @@ const adminExists = await db.getAllAsync('SELECT * FROM utilisateurs WHERE role 
          VALUES ('Admin', 'admin@bonplan.mg', ?, '034 09 755 55', 'admin')`,
         [hashedPassword]
       );
-    
     }
 
 

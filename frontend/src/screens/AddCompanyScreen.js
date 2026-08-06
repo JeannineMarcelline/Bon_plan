@@ -1,6 +1,6 @@
 import React, {useState, useEffect} from "react";
 import {View, Text, TextInput, TouchableOpacity, StyleSheet,
-    ScrollView,Alert,ActivityIndicator,
+    ScrollView,Alert,ActivityIndicator,KeyboardAvoidingView, Platform 
 } from  'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from "../context/AuthContext";
@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'react-native';
 import * as Location from 'expo-location';
+
 
 
 export default function AddCompanyScreen({navigation}){
@@ -163,7 +164,16 @@ export default function AddCompanyScreen({navigation}){
 
 return(
     <SafeAreaView style={styles.container} >
-        <ScrollView contentContainerStyle={styles.scrollContent} >
+       <KeyboardAvoidingView 
+          style={{ flex: 1 }} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <ScrollView 
+           contentContainerStyle={styles.scrollContent}
+           showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            >
          <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Ionicons name='arrow-back' size={24} color='#2c3e50'/>
@@ -171,7 +181,6 @@ return(
            <Text style={styles.title}> Ajouter mon entreprise</Text>
          </View>
      {/**Formulaire */}
-
     <View style={styles.form}>
     <View style={styles.inputContainer}>
         <Text style={styles.label}>Nom de l'entreprise *</Text>
@@ -318,7 +327,7 @@ return(
     )}
     </View>
     </View>
-{/* Type d'activité */}
+{/* Type d'activité 
 <View style={styles.inputContainer}>
   <Text style={styles.label}>Type d'activité *</Text>
   <View style={styles.pickerContainer}>
@@ -345,10 +354,10 @@ return(
           {type === 'service' && '🔧 Service'}
         </Text>
       </TouchableOpacity>
-    ))}
+    ))} 
   </View>
 </View>
-
+*/}
       <TouchableOpacity
             style={styles.submitButton}
             onPress={handleSubmit}
@@ -370,7 +379,8 @@ return(
  
 
     </View>
-     </ScrollView>
+    </ScrollView>
+ </KeyboardAvoidingView>
     </SafeAreaView>
 );
 }

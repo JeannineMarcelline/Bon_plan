@@ -54,8 +54,23 @@ export default function MesVehiculesScreen({ navigation }) {
     }, [])
   );
 
-  const deleteVehicule = (id, nom) => {
-    Alert.alert(
+const deleteVehicule = (id, nom) => {
+  // Verifier si c'est reserver
+const checkReservations  = async () => {
+  try{
+  const result = await db.getAllAsync('SELECT COUNT(*)  as total FROM reservation_transport WHERE id_vehicule = ?', [id]);
+
+  const nbReservations =  result[0]?.total || 0 ;
+
+  if(nbReservations > 0) {
+     Alert.alert(
+       'Suppression impossible',
+       `Ce vehicule à ${nbReservations} reservations en cours. Vous ne pouvez pas supprimer`,
+        [{text : "OK"}]
+     );
+     return;
+  }
+ Alert.alert(
       'Confirmation',
       `Voulez-vous vraiment supprimer "${nom}" ?`,
       [
@@ -65,8 +80,8 @@ export default function MesVehiculesScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await db.runAsync('DELETE FROM places WHERE id_vehicules = ?', [id]);
-              await db.runAsync('DELETE FROM vehicules WHERE id_vehicules = ?', [id]);
+              await db.runAsync('DELETE FROM places WHERE id_vehicule = ?', [id]);
+              await db.runAsync('DELETE FROM vehicules WHERE id_vehicule = ?', [id]);
               Alert.alert('Succès', 'Véhicule supprimé');
               loadVehicules();
             } catch (error) {
@@ -77,7 +92,15 @@ export default function MesVehiculesScreen({ navigation }) {
         },
       ]
     );
-  };
+  }catch(error){
+  console.error('Erreur vérification réservations:', error);
+  Alert.alert('Erreur', 'Impossible de vérifier les réservations');
+  }
+};
+ checkReservations();
+
+}
+
 
   // MODIFIE: Nouveau design de carte avec labels
   const renderVehicule = ({ item }) => (
@@ -128,17 +151,9 @@ export default function MesVehiculesScreen({ navigation }) {
           <Ionicons name="people-outline" size={16} color="#6B7280" style={styles.infoIconSpacing} />
           <Text style={styles.infoLabel}>Places :</Text>
           <Text style={styles.infoValue}>{item.nb_places || 0}</Text>
-
-           <Text style={styles.infoLabel}>Places a cote du chauffeur :</Text>
-          <Text style={styles.infoValue}>{item.places_cote_chauffeur || 0}</Text>
         </View>
 
-        {/* Ligne 4: Réservations */}
-        <View style={styles.infoRow}>
-          <Ionicons name="bookmark-outline" size={16} color="#6B7280" />
-          <Text style={styles.infoLabel}>Réservations : </Text>
-          <Text style={styles.infoValue}>{item.nb_reservations || 0}</Text>
-        </View>
+        
       </View>
 
 

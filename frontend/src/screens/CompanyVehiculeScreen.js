@@ -8,10 +8,12 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Alert
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import db from "../database/database";
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function CompanyVehiculeScreen({ route, navigation }) {
   const { idEntreprise } = route.params;
@@ -20,13 +22,16 @@ export default function CompanyVehiculeScreen({ route, navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
-  useEffect(() => {
+useFocusEffect(
+  React.useCallback(() => {
     const loadVehicules = async () => {
       try {
-        const result = await db.getAllAsync(
-          `SELECT * FROM vehicules WHERE id_entreprise = ?`,
-          [idEntreprise]
-        );
+        const result = await db.getAllAsync(`
+          SELECT v.*,
+            (SELECT COUNT(*) FROM places WHERE places.id_vehicule = v.id_vehicule AND places.statut = 'disponible') as places_disponibles
+          FROM vehicules v
+          WHERE v.id_entreprise = ?
+        `, [idEntreprise]);
         setVehicules(result);
       } catch (error) {
         console.error("Erreur chargement véhicules", error);
@@ -35,7 +40,8 @@ export default function CompanyVehiculeScreen({ route, navigation }) {
       }
     };
     loadVehicules();
-  }, []);
+  }, [idEntreprise])
+);
 
   const openImageModal = (photoUri) => {
     if (photoUri) {
@@ -52,9 +58,15 @@ export default function CompanyVehiculeScreen({ route, navigation }) {
 
   const renderVehicule = ({ item }) => (
     <TouchableOpacity
-      style={styles.card}
-      onPress={() => navigation.navigate("Places", { idVehicule: item.id_vehicule })}
-      activeOpacity={0.8}
+     style={styles.card}
+     onPress={() => {
+    if (item.places_disponibles === 0) {
+      Alert.alert('Complet', 'Ce véhicule n\'a plus de places disponibles');
+      return;
+    }
+    navigation.navigate('Places', { idVehicule: item.id_vehicule });
+  }}
+  activeOpacity={item.places_disponibles === 0 ? 1 : 0.8}
     >
       {/* Photo du véhicule avec zoom */}
       <TouchableOpacity
@@ -102,12 +114,16 @@ export default function CompanyVehiculeScreen({ route, navigation }) {
           <Text style={styles.vehiculePrice}>{item.prix_place} Ar / place</Text>
         </View>
 
-        <View style={styles.badgeContainer}>
-          <View style={styles.badge}>
-            <Ionicons name="people-outline" size={14} color="#2e7d32" />
-            <Text style={styles.badgeText}>{item.capacite} places</Text>
-          </View>
-        </View>
+        {item.places_disponibles > 0 ? (
+    <Text style={[styles.badgeText, styles.badge]}>
+    {item.places_disponibles} places disponibles
+  </Text>
+) : (
+  <View style={[styles.badge, styles.badgeComplet]}>
+    <Ionicons  size={14} color="#dc3545" />
+    <Text style={[styles.badgeText, styles.badgeTextComplet]}>Complet</Text>
+  </View>
+)}
       </View>
 
       <View style={styles.arrowContainer}>
@@ -289,7 +305,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#e8f5e9",
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 2,
     borderRadius: 16,
     alignSelf: "flex-start",
     gap: 4,
@@ -331,4 +347,10 @@ const styles = StyleSheet.create({
     height: "85%",
     borderRadius: 12,
   },
+  badgeComplet: {
+  backgroundColor: '#f8d7da',
+},
+badgeTextComplet: {
+  color: '#dc3545',
+},
 });
