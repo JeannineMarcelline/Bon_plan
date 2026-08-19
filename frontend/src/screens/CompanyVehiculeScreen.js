@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import db from "../database/database";
+import {supabase} from '../lib/supabase';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function CompanyVehiculeScreen({ route, navigation }) {
@@ -26,13 +26,24 @@ useFocusEffect(
   React.useCallback(() => {
     const loadVehicules = async () => {
       try {
-        const result = await db.getAllAsync(`
-          SELECT v.*,
-            (SELECT COUNT(*) FROM places WHERE places.id_vehicule = v.id_vehicule AND places.statut = 'disponible') as places_disponibles
-          FROM vehicules v
-          WHERE v.id_entreprise = ?
-        `, [idEntreprise]);
-        setVehicules(result);
+       const {data, error} = await supabase
+       .from('vehicules')
+       .select('*, places (statut)') 
+       .eq('id_entreprise', idEntreprise);
+
+       if(error) throw error; 
+       
+       const vehiculeAvecPlace = (data || []).map((v) => {
+       const placeDisponible = (v.places || []).filter(
+          (p) => p.statut === 'disponible'
+        ).length;
+        return{
+          ...v,
+          places_disponibles: placeDisponible
+        }
+
+       })
+        setVehicules(vehiculeAvecPlace);
       } catch (error) {
         console.error("Erreur chargement véhicules", error);
       } finally {

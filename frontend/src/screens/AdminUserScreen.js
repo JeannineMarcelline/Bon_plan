@@ -10,20 +10,25 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
+import { useNavigation } from '@react-navigation/native';
 
 export default function AdminUsersScreen() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+ const navigation = useNavigation();
 
-  // ===== CHARGER LES UTILISATEURS (NON MODIFIÉ) =====
+  // ===== CHARGER LES UTILISATEURS (migré vers Supabase) =====
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const result = await db.getAllAsync(
-        'SELECT id, nom, email, role, statut, telephone FROM utilisateurs ORDER BY id'
-      );
-      setUsers(result);
+      const { data, error } = await supabase
+        .from('utilisateurs')
+        .select('id, nom, email, role, statut, telephone')
+        .order('id');
+
+      if (error) throw error;
+      setUsers(data || []);
     } catch (error) {
       console.error('Erreur chargement utilisateurs:', error);
       Alert.alert('Erreur', 'Impossible de charger les utilisateurs');
@@ -51,10 +56,13 @@ export default function AdminUsersScreen() {
           style: action === 'bloquer' ? 'destructive' : 'default',
           onPress: async () => {
             try {
-              await db.runAsync(
-                'UPDATE utilisateurs SET statut = ? WHERE id = ?',
-                [nouveauStatut, id]
-              );
+              const { error } = await supabase
+                .from('utilisateurs')
+                .update({ statut: nouveauStatut })
+                .eq('id', id);
+
+              if (error) throw error;
+
               Alert.alert('Succès', `Utilisateur ${action === 'bloquer' ? 'bloqué' : 'débloqué'} !`);
               loadUsers();
             } catch (error) {
@@ -79,7 +87,13 @@ export default function AdminUsersScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await db.runAsync('DELETE FROM utilisateurs WHERE id = ?', [id]);
+              const { error } = await supabase
+                .from('utilisateurs')
+                .delete()
+                .eq('id', id);
+
+              if (error) throw error;
+
               Alert.alert('✅ Succès', 'Utilisateur supprimé !');
               loadUsers();
             } catch (error) {
@@ -201,12 +215,15 @@ export default function AdminUsersScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerContent}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#050505" />
+          </TouchableOpacity>
           <View style={styles.headerLeft}>
             <Ionicons name="people-outline" size={28} color="#2563EB" />
             <Text style={styles.title}>Gestion des utilisateurs</Text>
           </View>
         </View>
-        <Text style={styles.subtitle}>{users.length} utilisateurs enregistrés</Text>
+   
       </View>
 
       <FlatList
@@ -424,4 +441,11 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 12,
   },
+
+  backButton: {
+  top:5,
+  right: 3
+
+  },
+  
 });

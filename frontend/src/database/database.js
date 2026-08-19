@@ -38,6 +38,7 @@ export const initDatabase = async () => {
         motDePasse TEXT NOT NULL,
         telephone TEXT,
         adresse TEXT,
+        supabase_id TEXT,
         role TEXT NOT NULL CHECK (role IN ('client', 'pro', 'admin')),
         dateInscription TEXT DEFAULT CURRENT_TIMESTAMP,
         statut TEXT DEFAULT 'actif' CHECK (statut IN ('actif', 'suspendu'))
@@ -98,7 +99,7 @@ export const initDatabase = async () => {
       id_vehicule INTEGER NOT NULL,
       date_reservation TEXT NOT NULL,
       prix_total REAL DEFAULT 0,
-      statut TEXT DEFAULT 'confirmee',
+      statut TEXT DEFAULT 'en_attente' CHECK (statut IN ('en_attente', 'confirmee', 'annulee')),
       FOREIGN KEY (id_utilisateur) REFERENCES utilisateurs(id),
       FOREIGN KEY (id_vehicule) REFERENCES vehicules(id_vehicule)
       );
@@ -123,31 +124,7 @@ export const initDatabase = async () => {
      );
     `);
 
-    // ===== DONNÉES DE TEST TRANSPORT =====
-
-{/*await db.runAsync('DELETE FROM reservation_places;');
-await db.runAsync('DELETE FROM reservation_transport;');
-await db.runAsync('UPDATE places SET statut = "disponible" WHERE statut = "reservee";');
-console.log('🧹 Anciennes données nettoyées');*/}
-
-const entreprise = await db.getAllAsync('SELECT id FROM entreprises WHERE id = 1');
-if (entreprise.length === 0) {
-  console.log('⚠️ Entreprise id=1 non trouvée, création...');
-  const result = await db.runAsync(`
-    INSERT INTO entreprises (nom, description, adresse, telephone, ville_id, categorie_id, utilisateur_id, statutValidation, type_activite)
-    VALUES ('Transport Test', 'Entreprise de test', 'Adresse test', '034 00 00 00', 1, 1, 1, 'valide', 'transport')
-  `);
-  var idEntreprise = result.lastInsertRowId;
-} else {
-  var idEntreprise = entreprise[0].id;
-}
-
-
-
-// ===== FIN DONNÉES DE TEST =====
-
-
-
+    //await db.execAsync('DROP TABLE IF EXISTS utilisateurs');
     // 3. Admin par défaut
 const adminExists = await db.getAllAsync('SELECT * FROM utilisateurs WHERE role = "admin"');
    if (adminExists.length === 0) {

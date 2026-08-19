@@ -15,10 +15,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 
 export default function EditVehicleScreen({ route, navigation }) {
   const { id } = route.params;
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [nom, setNom] = useState('');
   const [type, setType] = useState('');
@@ -36,23 +40,26 @@ export default function EditVehicleScreen({ route, navigation }) {
   useEffect(() => {
     const loadVehicle = async () => {
       try {
-        const result = await db.getAllAsync(
-          'SELECT * FROM vehicules WHERE id_vehicule = ?',
-          [id]
-        );
-        if (result.length > 0) {
-          const v = result[0];
-          setNom(v.nom);
-          setType(v.type);
-          setCapacite(String(v.capacite));
-          setPrix(String(v.prix_place));
-          setVilleDepart(v.ville_depart);
-          setVilleArrivee(v.ville_arrivee);
-          setDateDepart(v.date_depart);
-          setHeureDepart(v.heure_depart);
-          setPhoto(v.photo);
-          setPlacesCoteChauffeur(String(v.places_cote_chauffeur || 0));
-        }
+       const { data: v, error } = await supabase
+         .from('vehicules')
+         .select('*')
+         .eq('id_vehicule', id)
+         .maybeSingle();
+       
+       if (error) throw error;
+       
+       if (v) {
+         setNom(v.nom);
+         setType(v.type);
+         setCapacite(String(v.capacite));
+         setPrix(String(v.prix_place));
+         setVilleDepart(v.ville_depart);
+         setVilleArrivee(v.ville_arrivee);
+         setDateDepart(v.date_depart);
+         setHeureDepart(v.heure_depart);
+         setPhoto(v.photo);
+         setPlacesCoteChauffeur(String(v.places_cote_chauffeur || 0));
+       }
       } catch (error) {
         console.error('Erreur chargement véhicule:', error);
         Alert.alert('Erreur', 'Impossible de charger le véhicule');
@@ -80,30 +87,65 @@ export default function EditVehicleScreen({ route, navigation }) {
     }
   };
 
+  const uploadPhoto = async (uri, userId) => {
+  try {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const arrayBuffer = decode(base64);
+    const fileExt = uri.split('.').pop();
+    const fileName = `${userId}-${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('vehicules')
+      .upload(fileName, arrayBuffer, { contentType: `image/${fileExt}` });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from('vehicules').getPublicUrl(fileName);
+    return data.publicUrl;
+  } catch (error) {
+    console.error('Erreur upload photo véhicule:', error);
+    return null;
+  }
+};
+
   const handleUpdate = async () => {
     if (!nom || !type || !capacite || !prix || !villeDepart || !villeArrivee || !dateDepart || !heureDepart) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs');
       return;
     }
 
-    try {
-      await db.runAsync(
-        `UPDATE vehicules SET
-          nom = ?, type = ?, photo = ?, capacite = ?, prix_place = ?,
-          ville_depart = ?, ville_arrivee = ?, date_depart = ?, heure_depart = ?,
-          places_cote_chauffeur = ?
-        WHERE id_vehicule = ?`,
-        [nom, type, photo, parseInt(capacite), parseFloat(prix),
-         villeDepart, villeArrivee, dateDepart, heureDepart,
-         parseInt(placesCoteChauffeur), id]
-      );
+   try {
+  let photoUrl = photo;
+  if (photo && photo.startsWith('file://')) {
+    photoUrl = await uploadPhoto(photo, user.id);
+  }
 
-      Alert.alert('✅ Succès', 'Véhicule modifié !');
-      navigation.goBack();
-    } catch (error) {
-      console.error('Erreur modification:', error);
-      Alert.alert('Erreur', 'Impossible de modifier le véhicule');
-    }
+  const { error } = await supabase
+    .from('vehicules')
+    .update({
+      nom,
+      type,
+      photo: photoUrl,
+      capacite: parseInt(capacite),
+      prix_place: parseFloat(prix),
+      ville_depart: villeDepart,
+      ville_arrivee: villeArrivee,
+      date_depart: dateDepart,
+      heure_depart: heureDepart,
+      places_cote_chauffeur: parseInt(placesCoteChauffeur),
+    })
+    .eq('id_vehicule', id);
+
+  if (error) throw error;
+
+  Alert.alert('✅ Succès', 'Véhicule modifié !');
+  navigation.goBack();
+} catch (error) {
+  console.error('Erreur modification:', error);
+  Alert.alert('Erreur', 'Impossible de modifier le véhicule');
+}
   };
 
   const formatDate = (dateString) => {
@@ -166,10 +208,15 @@ export default function EditVehicleScreen({ route, navigation }) {
           </View>
 
           <View style={styles.row}>
-            <View style={[styles.inputGroup, styles.halfWidth]}>
-              <Text style={styles.label}>Capacité (places) *</Text>
-              <TextInput style={styles.input} keyboardType="numeric" value={capacite} onChangeText={setCapacite} />
-            </View>
+           <View style={[styles.inputGroup, styles.halfWidth]}>
+  <Text style={styles.label}>Capacité (places)</Text>
+  <TextInput
+    style={[styles.input, styles.inputDisabled]}
+    value={capacite}
+    editable={false}
+  />
+  <Text style={styles.hint}>Non modifiable après création</Text>
+</View>
             <View style={[styles.inputGroup, styles.halfWidth]}>
               <Text style={styles.label}>Prix par place (Ar) *</Text>
               <TextInput style={styles.input} keyboardType="numeric" value={prix} onChangeText={setPrix} />
@@ -339,4 +386,13 @@ const styles = StyleSheet.create({
   },
   optionButtonText: { fontSize: 16, color: '#374151' },
   optionButtonTextActive: { color: '#2563EB', fontWeight: 'bold' },
+  inputDisabled: {
+  backgroundColor: '#F3F4F6',
+  color: '#9CA3AF',
+},
+hint: {
+  fontSize: 12,
+  color: '#6B7280',
+  marginTop: 4,
+},
 });

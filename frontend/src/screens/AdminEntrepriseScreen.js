@@ -10,26 +10,38 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import db from '../database/database';
+import {supabase} from '../lib/supabase';
+import { useNavigation } from '@react-navigation/native';
 
 export default function AdminEntrepriseScreen() {
   const [entreprises, setEntreprises] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigation = useNavigation();
 
   // Charger les entreprises (NON MODIFIÉ)
   const loadEntreprises = async () => {
     try {
       setLoading(true);
-      const result = await db.getAllAsync(`
-        SELECT e.*, u.nom as proprietaire, v.nom as ville, c.nom as categorie
-        FROM entreprises e
-        LEFT JOIN utilisateurs u ON e.utilisateur_id = u.id
-        LEFT JOIN villes v ON e.ville_id = v.id
-        LEFT JOIN categories c ON e.categorie_id = c.id
-        WHERE u.id IS NOT NULL
-        ORDER BY e.id DESC
-      `);
-      setEntreprises(result);
+      const { data, error } = await supabase
+      .from('entreprises')
+      .select(`
+        *,
+        utilisateurs ( nom ),
+        villes ( nom ),
+        categories ( nom )
+        `)
+      .order('id', {ascending: false});
+      if (error) throw error;
+
+
+      const entreprisesFormates = (data || []).map((e) => ({
+        ...e,
+        proprietaire: e.utilisateurs?.nom || 'inconnu',
+        ville: e.villes?.nom || '',
+        categorie: e.categories?.nom || '',
+      }));
+
+      setEntreprises(entreprisesFormates);
     } catch (error) {
       console.error('Erreur chargement entreprises:', error);
       Alert.alert('Erreur', 'Impossible de charger les entreprises'); 
@@ -57,14 +69,16 @@ export default function AdminEntrepriseScreen() {
           style: actionLabel === 'valider' ? 'default' : 'destructive',
           onPress: async () => {
             try {
-              await db.runAsync(
-                'UPDATE entreprises SET statutValidation = ? WHERE id = ?',
-                [nouveauStatut, id]
-              );
+              const { error } = await supabase
+              .from('entreprises')
+              .update({ statutvalidation: nouveauStatut })
+              .eq('id', id);
+              if (error) throw error;
+
               const message = actionLabel === 'valider' 
                 ? 'Entreprise validée et visible dans l\'app client !' 
                 : 'Entreprise refusée, elle n\'apparaîtra pas dans l\'app client.';
-              Alert.alert('✅ Succès', message);
+              Alert.alert('Succès', message);
               loadEntreprises();
             } catch (error) {
               console.error('Erreur mise à jour:', error);
@@ -128,8 +142,8 @@ export default function AdminEntrepriseScreen() {
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{item.nom}</Text>
         <View style={styles.headerRight}>
-          <View style={[styles.statutBadge, getStatutStyle(item.statutValidation)]}>
-            <Text style={styles.statutText}>{getStatutLabel(item.statutValidation)}</Text>
+          <View style={[styles.statutBadge, getStatutStyle(item.statutvalidation)]}>
+            <Text style={styles.statutText}>{getStatutLabel(item.statutvalidation)}</Text>
           </View>
           
         
@@ -138,7 +152,7 @@ export default function AdminEntrepriseScreen() {
 
   {/* MODIFIE: Actions avec boutons textes selon le statut */}
        <View style={styles.cardActions}>
-            {item.statutValidation === 'valide' && (
+            {item.statutvalidation === 'valide' && (
               <TouchableOpacity
                 style={[styles.actionButton, styles.actionDesactiver]}
                 onPress={() => handleDesactiver(item.id, item.nom)}
@@ -148,7 +162,7 @@ export default function AdminEntrepriseScreen() {
               </TouchableOpacity>
             )}
             
-            {item.statutValidation === 'en_attente' && (
+            {item.statutvalidation === 'en_attente' && (
               <>
                 <TouchableOpacity
                   style={[styles.actionButton, styles.actionValider]}
@@ -167,7 +181,7 @@ export default function AdminEntrepriseScreen() {
               </>
             )}
             
-            {item.statutValidation === 'refuse' && (
+            {item.statutvalidation === 'refuse' && (
               <TouchableOpacity
                 style={[styles.actionButton, styles.actionReactive]}
                 onPress={() => handleReactive(item.id, item.nom)}
@@ -197,7 +211,7 @@ export default function AdminEntrepriseScreen() {
       </View>
 
       {/* MODIFIE: Tooltip pour les entreprises refusées */}
-      {item.statutValidation === 'refuse' && (
+      {item.statutvalidation === 'refuse' && (
         <View style={styles.tooltipContainer}>
           <Ionicons name="information-circle-outline" size={14} color="#9CA3AF" />
           <Text style={styles.tooltipText}>Ne s'affiche pas dans l'app client</Text>
@@ -219,10 +233,12 @@ export default function AdminEntrepriseScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerRow}>
+           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+               <Ionicons name="arrow-back" size={24} color="#050505" />
+             </TouchableOpacity>
           <Ionicons name="business-outline" size={28} color="#2563EB" />
           <Text style={styles.title}>Gestion des entreprises</Text>
         </View>
-        <Text style={styles.subtitle}>{entreprises.length} entreprises enregistrées</Text>
       </View>
 
       <FlatList

@@ -12,7 +12,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import db from '../database/database';
+import { supabase } from "../lib/supabase";
+import { useNavigation } from "@react-navigation/native";
+
 
 export default function AdminCategorie() {
   const [categorie, setCategorie] = useState([]);
@@ -22,12 +24,17 @@ export default function AdminCategorie() {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('add');
   const [selectedId, setSelectedId] = useState(null);
+  const navigation  = useNavigation();
 
   const loadCategorie = async () => {
     try {
       setLoading(true);
-      const result = await db.getAllAsync('SELECT * FROM categories ORDER BY nom');
-      setCategorie(result);
+      const{ data, error} = await supabase
+      .from('categories')
+      .select('*')
+      .order('nom');
+      if(error) throw error; 
+      setCategorie(data);
     } catch (error) {
       console.error('Erreur de chargement de categorie: ', error);
       Alert.alert('Erreur', 'Impossible de charger les catégories');
@@ -47,9 +54,11 @@ export default function AdminCategorie() {
       return;
     }
     try {
-      await db.runAsync('INSERT INTO categories (nom, description) VALUES (?, ?)',
-        [nom.trim(), description.trim()]
-      );
+      const {error} = await supabase.from('categories').insert({
+        nom: nom.trim(),
+        description: description.trim(),
+      });
+      if (error) throw error; 
       Alert.alert('Succès', 'Catégorie ajoutée !');
       setNom('');
       setDescription('');
@@ -68,9 +77,16 @@ export default function AdminCategorie() {
       return;
     }
     try {
-      await db.runAsync('UPDATE categories SET nom = ?, description = ? WHERE id = ?',
-        [nom.trim(), description.trim(), selectedId]
-      );
+      const {error} = await supabase 
+      .from('categories')
+      .update({
+        nom: nom.trim(),
+        description: description.trim(),
+      })
+      .eq('id', selectedId)
+      
+      if(error) throw error
+
       Alert.alert('Succès', 'Catégorie modifiée !');
       setNom('');
       setDescription('');
@@ -95,7 +111,12 @@ export default function AdminCategorie() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await db.runAsync('DELETE FROM categories WHERE id = ?', [id]);
+              const {error} = await supabase
+              .from('categories')
+              .delete()
+              .eq('id', id);
+              if(error) throw error;
+
               Alert.alert('Succès', 'Catégorie supprimée !');
               loadCategorie();
             } catch (error) {
@@ -173,11 +194,13 @@ export default function AdminCategorie() {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
+               <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+                  <Ionicons name="arrow-back" size={24} color="#050505" />
+               </TouchableOpacity>
             <Ionicons name="pricetags-outline" size={28} color="#2563EB" />
             <Text style={styles.title}>Gestion des catégories</Text>
           </View>
         </View>
-        <Text style={styles.subtitle}>{categorie.length} catégories enregistrées</Text>
       </View>
 
       {/* MODIFIE: Bouton Ajouter */}

@@ -9,11 +9,9 @@ import { useAuth } from '../context/AuthContext';
 
 import HomeScreen from '../screens/HomeScreen';
 import CompanyScreen from '../screens/CompanyScreen';
-import BookingScreen from '../screens/BookingScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
-import BookingsScreen2 from '../screens/BookingScreen2';
 import ProfileScreen from '../screens/ProfileScreen';
 import AddCompanyScreen from '../screens/AddCompanyScreen';
 import AdminScreen from '../screens/AdminScreen';
@@ -29,10 +27,7 @@ import AddVehiculeScreen from '../screens/AddVehiculeScreen';
 import MesVehiculesScreen from '../screens/MesVehiculesScreen';
 import ProReservation from '../screens/ProReservation';
 import EditVehicule from '../screens/EditVehicule';
-
-
-
-
+import TicketScreen from '../screens/TicketScreen';
 
 
 
@@ -45,7 +40,6 @@ function HomeStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Company" component={CompanyScreen} />
-      <Stack.Screen name="Booking" component={BookingScreen} />
       <Stack.Screen name="AddCompany" component={AddCompanyScreen} />
       <Stack.Screen  name="ProDashbord" component={ProDashbordScreen}/>
       <Stack.Screen  name="CompanyVehicules" component={CompanyVehiculeScreen}/>
@@ -55,6 +49,8 @@ function HomeStack() {
      <Stack.Screen name="MesVehicules" component={MesVehiculesScreen} />
      <Stack.Screen name="ProReservation" component={ProReservation} />
      <Stack.Screen name="EditVehicule" component={EditVehicule} />
+     <Stack.Screen name="TicketScreen" component={TicketScreen}/>
+
 
     </Stack.Navigator>
   );
@@ -70,6 +66,16 @@ function AdminStack() {
       <Stack.Screen name="AdminEntreprises" component={AdminEntrepriseScreen} />
     
 
+    </Stack.Navigator>
+  );
+}
+
+// Stack pour l'onglet Réservations (nécessaire pour pouvoir naviguer vers TicketScreen depuis là)
+function ReservationsStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="MesReservationsHome" component={MesReservationsScreen} />
+      <Stack.Screen name="TicketScreen" component={TicketScreen} />
     </Stack.Navigator>
   );
 }
@@ -112,7 +118,7 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Accueil" component={HomeStack} />
-      <Tab.Screen name="Réservations" component={BookingsScreen2} />
+      <Tab.Screen name="Réservations" component={ReservationsStack} />
       <Tab.Screen name="Favoris" component={FavoritesScreen} />
       <Tab.Screen name="Profil" component={ProfileScreen} />
       {user?.role === 'admin' && (
@@ -153,6 +159,7 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       {user ? <MainTabs /> : <AuthStack />}
+       
     </NavigationContainer>
   );
 }

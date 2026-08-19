@@ -1,108 +1,168 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import * as Crypto from 'expo-crypto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import db from '../database/database';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
+
 
 const AuthContext = createContext();
 
-const hashPassword = async (password) => {
-  const hashed = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    password
-  );
-  return hashed;
-};
-
 export function AuthProvider({ children }) {
+  
   const [user, setUser] = useState(null);
+
   const [loading, setLoading] = useState(true);
 
+  const isRegisteringRef = useRef(false);
+
+ 
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const fetchProfile = async (authUser, retriesLeft = 2) => {
+    if (!authUser) return null;
+
+    const { data: profil, error } = await supabase
+      .from('utilisateurs')
+      .select('*')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if (error) {
+      console.log(' Erreur récupération profil:', error.message);
+    }
+
+   
+    if (!profil && retriesLeft > 0) {
+      console.log(`⏳ Profil pas encore trouvé, nouvelle tentative dans 400ms... (${retriesLeft} restantes)`);
+      await wait(400);
+      return fetchProfile(authUser, retriesLeft - 1);
+    }
+
+    return {
+      id: authUser.id,
+      email: authUser.email,
+      ...profil,
+    };
+  };
+
+  
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const storedUser = await AsyncStorage.getItem('user');
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
+    
+    const initSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        const fullUser = await fetchProfile(session.user);
+        setUser(fullUser);
+      }
+
+      setLoading(false);
+    };
+
+    initSession();
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('🔄 Auth event:', event); // ex: SIGNED_IN, SIGNED_OUT...
+
+    
+        if (isRegisteringRef.current) {
+          console.log('⏸️ Inscription en cours, onAuthStateChange met setUser en pause');
+          setLoading(false);
+          return;
         }
-      } catch (error) {
-        console.error('Erreur chargement utilisateur:', error);
-      } finally {
+
+        if (session?.user) {
+        
+          const fullUser = await fetchProfile(session.user);
+          setUser(fullUser);
+        } else {
+          
+          setUser(null);
+        }
         setLoading(false);
       }
-    };
-    loadUser();
-  }, []);
+    );
 
-  const register = async (nom, email, password, telephone, role) => {
+    return () => {
+      listener?.subscription?.unsubscribe();
+    };
+  }, []);
+  
+  const register = async (nom, email, password, telephone, role = 'user') => {
+   
+    isRegisteringRef.current = true;
+
     try {
-      const existing = await db.getAllAsync(
-        'SELECT * FROM utilisateurs WHERE email = ?',
-        [email]
-      );
-      if (existing.length > 0) {
-        throw new Error('Cet email est déjà utilisé');
+   
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { nom, role, telephone },
+        },
+      });
+
+      if (error) throw error;
+      if (data.user) {
+        const { error: profilError } = await supabase.from('utilisateurs').upsert({
+          id: data.user.id, // même id que dans auth.users → very important
+          nom,
+          email,
+          telephone,
+          role,
+        });
+
+        
+        if (profilError) {
+          console.log('⚠️ Erreur insertion profil:', profilError.message);
+        }
       }
 
-      const hashedPassword = await hashPassword(password);
-      const result = await db.runAsync(
-        `INSERT INTO utilisateurs (nom, email, motDePasse, telephone, role)
-         VALUES (?, ?, ?, ?, ?)`,
-        [nom, email, hashedPassword, telephone, role]
-      );
+     
+      const fullUser = await fetchProfile(data.user);
+      setUser(fullUser);
 
-      const newUser = await db.getAllAsync(
-        'SELECT * FROM utilisateurs WHERE id = ?',
-        [result.lastInsertRowId]
-      );
-      const userData = newUser[0];
-      setUser(userData);
-      await AsyncStorage.setItem('user', JSON.stringify(userData));
-
-      return { success: true, user: userData };
+      return { success: true, user: fullUser };
     } catch (error) {
       return { success: false, error: error.message };
+    } finally {
+     
+      isRegisteringRef.current = false;
     }
   };
 
+ 
   const login = async (email, password) => {
     try {
-      const hashedPassword = await hashPassword(password);
-      const users = await db.getAllAsync(
-        'SELECT * FROM utilisateurs WHERE email = ? AND motDePasse = ?',
-        [email, hashedPassword]
-      );
+    
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-      if (users.length === 0) {
-        throw new Error('Email ou mot de passe incorrect');
-      }
+      if (error) throw error;
 
-      const userData = users[0];  // ← CORRIGÉ
+      const fullUser = await fetchProfile(data.user);
+      setUser(fullUser);
 
-      if (userData.statut === 'suspendu') {
-        throw new Error('Votre compte a été suspendu');
-      }
-
-      setUser(userData);
-      await AsyncStorage.setItem('user', JSON.stringify(userData));
-
-      return { success: true, user: userData };
+      return { success: true, user: fullUser };
     } catch (error) {
       return { success: false, error: error.message };
     }
-  };  // ← FIN de login
-
-  const logout = async () => {
-    setUser(null);
-    await AsyncStorage.removeItem('user');
   };
 
+  
+  const logout = async () => {
+   
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+ 
   const value = {
     user,
     loading,
     register,
     login,
     logout,
-    isAuthenticated: !!user,
+    isAuthenticated: !!user, 
   };
 
   return (
@@ -112,12 +172,11 @@ export function AuthProvider({ children }) {
   );
 }
 
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth doit être utilisé à l\'intérieur de AuthProvider');
+    throw new Error("useAuth doit être utilisé à l'intérieur de AuthProvider");
   }
   return context;
 };
-
-

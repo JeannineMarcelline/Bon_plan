@@ -12,7 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -27,9 +27,15 @@ export default function ProfileScreen() {
       return;
     }
     try {
-      const result = await db.getAllAsync('SELECT * FROM entreprises WHERE utilisateur_id = ?', [user.id]);
-      if (result.length > 0) {
-        setEntreprise(result[0]);
+     const { data, error } = await supabase
+     .from ('entreprises')
+     .select('*')
+     .eq('utilisateur_id', user.id)
+     .maybeSingle();
+
+     if(error) throw error;
+      if (data) {
+        setEntreprise(data);
       }
     } catch (error) {
       console.error('Erreur de chargement de entreprise:', error);
@@ -62,8 +68,8 @@ export default function ProfileScreen() {
   };
 
   const getStatutLabel = (statut) => {
-    if (statut === 'valide') return '✅ Validée';
-    if (statut === 'refuse') return '❌ Refusée';
+    if (statut === 'valide') return ' Validée';
+    if (statut === 'refuse') return ' Refusée';
     return '⏳ En attente';
   };
 
@@ -112,29 +118,29 @@ export default function ProfileScreen() {
         {/* ===== SECTION ENTREPRISE (PRO) ===== */}
         {user?.role === 'pro' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>🏢 Mon entreprise</Text>
+            <Text style={styles.cardTitle}> Mon entreprise</Text>
             {loadingEntreprise ? (
               <Text style={styles.loadingText}>Chargement...</Text>
             ) : entreprise ? (
               <>
                 <Text style={styles.entrepriseNom}>{entreprise.nom}</Text>
                 <Text style={styles.entrepriseStatut}>
-                  Statut : {getStatutLabel(entreprise.statutValidation)}
+                  Statut : {getStatutLabel(entreprise.statutvalidation)}
                 </Text>
-                {entreprise.statutValidation === 'valide' && (
+                {entreprise.statutvalidation === 'valide' && (
                   <TouchableOpacity
                     style={styles.primaryButton}
                     onPress={() => navigation.navigate('Accueil', { screen: 'ProDashbord' })}
                   >
-                    <Text style={styles.primaryButtonText}>📊 Dashboard Pro</Text>
+                    <Text style={styles.primaryButtonText}>Dashboard Pro</Text>
                   </TouchableOpacity>
                 )}
-                {entreprise.statutValidation === 'en_attente' && (
+                {entreprise.statutvalidation === 'en_attente' && (
                   <View style={styles.pendingBox}>
                     <Text style={styles.pendingText}>⏳ En attente de validation</Text>
                   </View>
                 )}
-                {entreprise.statutValidation === 'refuse' && (
+                {entreprise.statutvalidation === 'refuse' && (
                   <View style={styles.refusedBox}>
                     <Text style={styles.refusedText}>❌ Refusée</Text>
                   </View>
@@ -151,15 +157,8 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {/* ===== MES RÉSERVATIONS ===== */}
-        <TouchableOpacity
-          style={styles.menuCard}
-          onPress={() => navigation.navigate('Accueil', { screen: 'MesReservations' })}
-        >
-          <Ionicons name="calendar-outline" size={24} color="#1E3A5F" />
-          <Text style={styles.menuCardText}>Mes réservations</Text>
-          <Ionicons name="chevron-forward" size={20} color="#ccc" />
-        </TouchableOpacity>
+
+        
 
         {/* ===== DÉCONNEXION ===== */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>

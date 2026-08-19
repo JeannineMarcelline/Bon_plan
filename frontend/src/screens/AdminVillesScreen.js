@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
+import { useNavigation } from "@react-navigation/native";
 
 export default function AdminVillesScreen() {
 
@@ -23,12 +24,17 @@ export default function AdminVillesScreen() {
   const [selectedId, setSelectedId] = useState(null);
   const [nom, setNom] = useState('');
   const [region, setRegion] = useState('');
+  const navigation = useNavigation();
 
   const loadVilles = async () => {
     try {
       setLoading(true);
-      const result = await db.getAllAsync('SELECT * FROM villes ORDER BY nom');
-      setVilles(result);
+      const { data, error } = await supabase 
+      .from('villes')
+      .select('*')
+      .order('nom');
+      if(error) throw error;
+      setVilles(data);
     } catch (error) {
       console.error('Erreur chargement de villes: ', error);
       Alert.alert('Erreur', 'Impossible de charger les villes');
@@ -48,9 +54,12 @@ export default function AdminVillesScreen() {
       return;
     }
     try {
-      await db.runAsync('INSERT INTO villes (nom, region) VALUES (?,?)',
-        [nom.trim(), region.trim()]
-      );
+      const {error} = await supabase.from('villes').insert({
+        nom: nom.trim(),
+        region: region.trim(),
+      });
+      if(error) throw error;
+
       Alert.alert('Succès', 'Ville ajoutée !');
       setNom('');
       setRegion('');
@@ -69,10 +78,16 @@ export default function AdminVillesScreen() {
       return;
     }
     try {
-      await db.runAsync(
-        'UPDATE villes SET nom = ? , region = ? WHERE id = ?',
-        [nom.trim(), region.trim(), selectedId],
-      );
+      const {error} = await supabase
+      .from('villes')
+      .update({
+        nom: nom.trim(),
+        region: region.trim(),
+      })
+      .eq('id', selectedId);
+
+      if(error) throw error;
+
       Alert.alert('Succès', 'Ville modifiée !');
       setNom('');
       setRegion('');
@@ -97,7 +112,12 @@ export default function AdminVillesScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await db.runAsync('DELETE FROM villes WHERE id = ?', [id]);
+              const {error} = await supabase
+              .from('villes')
+              .delete()
+              .eq('id', id);
+              if(error) throw error;
+
               Alert.alert('Succès', 'Ville supprimée !');
               loadVilles();
             } catch (error) {
@@ -129,7 +149,7 @@ export default function AdminVillesScreen() {
   };
 
   // MODIFIE: Rendu d'une ligne avec nouveau design
-  const RenderItem = ({ item }) => (
+   const RenderItem = ({ item }) => (
     <View style={styles.card}>
       {/* COLONNE GAUCHE - Infos */}
       <View style={styles.cardContent}>
@@ -176,11 +196,14 @@ export default function AdminVillesScreen() {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+                        <Ionicons name="arrow-back" size={24} color="#050505" />
+            </TouchableOpacity>
             <Ionicons name="location-outline" size={28} color="#2563EB" />
             <Text style={styles.title}>Gestion des villes</Text>
           </View>
         </View>
-        <Text style={styles.subtitle}>{villes.length} villes enregistrées</Text>
+        
       </View>
 
       <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
@@ -282,7 +305,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#111827',
-    letterSpacing: -0.5,
+   
   },
   subtitle: {
     fontSize: 14,

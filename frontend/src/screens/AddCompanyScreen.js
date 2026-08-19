@@ -4,11 +4,14 @@ import {View, Text, TextInput, TouchableOpacity, StyleSheet,
 } from  'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from "../context/AuthContext";
-import db from '../database/database';
+import { supabase } from "../lib/supabase";
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'react-native';
 import * as Location from 'expo-location';
+
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 
 
 
@@ -49,14 +52,38 @@ export default function AddCompanyScreen({navigation}){
   }
 };
 
+const formatPhoneNumber = (text) => {
+
+const cleaned = text.replace(/\D/g, '');
+
+const limited = cleaned.slice(0, 10);
+
+let formatted = '';
+
+for (let i = 0; i < limited.length; i++) {
+    if (i === 3 || i === 5 || i === 8) {
+      formatted += ' ';
+    }
+    formatted += limited[i];
+  }
+  
+  return formatted;
+}
+
     useEffect(() => {
         const loadData = async () => {
             try{
-           const villesResult = await db.getAllAsync('SELECT * FROM villes ORDER BY nom');
-           const categoriesResult = await db.getAllAsync('SELECT * FROM categories ORDER BY nom');
+       
+           const [villesRes, categoriesRes] = await Promise.all([
+             supabase.from('villes').select('*').order('nom'),
+             supabase.from('categories').select('*').order('nom'),
+           ]);
 
-           setVilles(villesResult);
-           setCategories(categoriesResult);
+           if (villesRes.error) throw villesRes.error;
+           if (categoriesRes.error) throw categoriesRes.error;
+
+           setVilles(villesRes.data);
+           setCategories(categoriesRes.data);
 
             }catch(error){
          console.error('Erreur chargement données:', error);
@@ -70,7 +97,7 @@ export default function AddCompanyScreen({navigation}){
 
     if(user?.role !== 'pro'){
         return(
-            <SafeAreaView style={style.container}>
+            <SafeAreaView style={styles.container}>
               <View style={styles.center}>
                 <Ionicons name='lock-closed' size={60} color='#e74c3c'/>
                 <Text style={styles.errorTitle}>Accès refusé</Text>
@@ -87,6 +114,38 @@ export default function AddCompanyScreen({navigation}){
             </SafeAreaView>
         );
     }
+
+
+  const uploadLogo = async (uri, userId) => {
+    try {
+      
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+  
+      const arrayBuffer = decode(base64);
+
+      const fileExt = uri.split('.').pop();
+      const fileName = `${userId}-${Date.now()}.${fileExt}`;
+
+      // Étape 2 : upload vers le bucket "logos"
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt}`,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('logos').getPublicUrl(fileName);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Erreur upload logo:', error);
+      return null;
+    }
+  };
 
   const pickImage = async () =>{
     const {status} = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -119,32 +178,36 @@ export default function AddCompanyScreen({navigation}){
    const latitude = coords?.latitude || null;
    const longitude = coords?.longitude || null;
    console.log('📍 Coordonnées trouvées :', latitude, longitude);
-   
+
     try{
-    const result = await db.runAsync(
-     `INSERT INTO entreprises (nom, description, adresse, telephone, siteweb, logo, 
-     ville_id, categorie_id, utilisateur_id, statutValidation, type_activite, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-     [
+      
+      let logoUrl = null;
+      if (logoUri) {
+        logoUrl = await uploadLogo(logoUri, user.id);
+      }
+
+      const { error } = await supabase.from('entreprises').insert({
         nom,
-        description || '',
+        description: description || '',
         adresse,
         telephone,
-        siteweb || '',
-        logo || '',
-        villeId,
-        categorieId,
-        user.id,
-      'en_attente',
-      typeActivite,
-      latitude,
-      longitude
-     ]
-    );
-    Alert.alert(
-  ' Entreprise créée !',
-  'Votre entreprise est en attente de validation par l\'administrateur. Vous serez notifié dès qu\'elle sera validée.',
-  [{ text: 'OK', onPress: () => navigation.goBack() }]
-);
+        siteweb: siteweb || '',
+        logo: logoUrl || '', // l'URL publique récupérée après upload
+        ville_id: villeId,
+        categorie_id: categorieId,
+        utilisateur_id: user.id,
+        statutvalidation: 'en_attente',
+        latitude,
+        longitude,
+      });
+
+      if (error) throw error;
+
+      Alert.alert(
+        ' Entreprise créée !',
+        'Votre entreprise est en attente de validation par l\'administrateur. Vous serez notifié dès qu\'elle sera validée.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
 
     }catch(error){
       console.error('Erreur création entreprise:' ,error);
@@ -216,12 +279,17 @@ return(
 
      <View style={styles.inputContainer}>
         <Text style={styles.label}>Téléphone *</Text>
-        <TextInput
-        style={styles.input}
-        placeholder="Ex: 034 00 000 00"
-        value={telephone}
-        onChangeText={setTelephone}
-        keyboardType="phone-pad"
+           <TextInput
+                  style={styles.input}
+                  placeholder="034 00 000 00"
+                  placeholderTextColor="#9CA3AF"
+                  value={telephone}
+                  onChangeText={(text) => {
+                  const formatted = formatPhoneNumber(text);
+                  setTelephone(formatted);
+                      }}
+          keyboardType="phone-pad"
+          maxLength={13} 
         />
     </View>
 
@@ -327,37 +395,6 @@ return(
     )}
     </View>
     </View>
-{/* Type d'activité 
-<View style={styles.inputContainer}>
-  <Text style={styles.label}>Type d'activité *</Text>
-  <View style={styles.pickerContainer}>
-    {['hotel', 'restaurant', 'transport', 'artisan', 'agriculteur', 'service'].map((type) => (
-      <TouchableOpacity
-        key={type}
-        style={[
-          styles.pickerItem,
-          typeActivite === type && styles.pickerItemSelected,
-        ]}
-        onPress={() => setTypeActivite(type)}
-      >
-        <Text
-          style={[
-            styles.pickerItemText,
-            typeActivite === type && styles.pickerItemTextSelected,
-          ]}
-        >
-          {type === 'hotel' && '🏨 Hôtel'}
-          {type === 'restaurant' && '🍽️ Restaurant'}
-          {type === 'transport' && '🚐 Transport'}
-          {type === 'artisan' && '🎨 Artisan'}
-          {type === 'agriculteur' && '🌾 Agriculteur'}
-          {type === 'service' && '🔧 Service'}
-        </Text>
-      </TouchableOpacity>
-    ))} 
-  </View>
-</View>
-*/}
       <TouchableOpacity
             style={styles.submitButton}
             onPress={handleSubmit}

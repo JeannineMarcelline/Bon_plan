@@ -7,10 +7,10 @@ StyleSheet,
 TouchableOpacity,
 ActivityIndicator,
 FlatList, 
-SafeAreaViewBase
+Alert
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
-import db from "../database/database";
+import { supabase } from "../lib/supabase";
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -22,39 +22,56 @@ export default function ProReservation ({navigation}) {
 
     const loadReservation = async () => {
         try{
-               const entreprises = await db.getAllAsync('SELECT id FROM entreprises WHERE utilisateur_id = ? ', [user.id]);
-               if(entreprises.length === 0) {
-               setReservation([]);
-               setLoading(false);
-               return;
-                     }
-        const idEntreprise = entreprises[0].id;
-        const result = await db.getAllAsync(
-        ` 
-        SELECT 
-            r.id_reservation,
-            r.date_reservation,
-            r.statut,
-            r.prix_total,
-            u.nom as client_nom,
-            u.telephone as client_telephone,
-            v.nom as vehicule_nom,
-            v.ville_depart,
-            v.ville_arrivee,
-            v.date_depart,
-            v.heure_depart,
-            GROUP_CONCAT(p.numero_place, ', ') as places,
-            COUNT(rp.id_place) as nb_places
-            FROM reservation_transport r
-            JOIN utilisateurs u ON r.id_utilisateur = u.id
-            JOIN vehicules v ON r.id_vehicule = v.id_vehicule
-            JOIN reservation_places rp ON r.id_reservation = rp.id_reservation
-            JOIN places p ON rp.id_place = p.id_place
-            WHERE v.id_entreprise = ?
-            GROUP BY r.id_reservation
-            ORDER BY r.date_reservation DESC`, [idEntreprise]); 
+             const { data: entreprise, error: entrepriseError } = await supabase
+  .from('entreprises')
+  .select('id')
+  .eq('utilisateur_id', user.id)
+  .maybeSingle();
 
-      setReservation(result || []);
+if (entrepriseError) throw entrepriseError;
+
+if (!entreprise) {
+  setReservation([]);
+  setLoading(false);
+  return;
+}
+
+const { data, error } = await supabase
+  .from('reservation_transport')
+  .select(`
+    id_reservation,
+    date_reservation,
+    statut,
+    prix_total,
+    utilisateurs ( nom, telephone ),
+    vehicules!inner ( nom, ville_depart, ville_arrivee, date_depart, heure_depart, id_entreprise ),
+    reservation_places ( places ( numero_place ) )
+  `)
+  .eq('vehicules.id_entreprise', entreprise.id)
+  .order('date_reservation', { ascending: false });
+
+if (error) throw error;
+
+const reservationsFormatees = (data || []).map((r) => {
+  const numeros = (r.reservation_places || [])
+    .map((rp) => rp.places?.numero_place)
+    .filter(Boolean);
+
+  return {
+    ...r,
+    client_nom: r.utilisateurs?.nom,
+    client_telephone: r.utilisateurs?.telephone,
+    vehicule_nom: r.vehicules?.nom,
+    ville_depart: r.vehicules?.ville_depart,
+    ville_arrivee: r.vehicules?.ville_arrivee,
+    date_depart: r.vehicules?.date_depart,
+    heure_depart: r.vehicules?.heure_depart,
+    places: numeros.join(', '),
+    nb_places: numeros.length,
+  };
+});
+
+setReservation(reservationsFormatees); 
     }catch(error){
            console.error('Erreur de chargement de reservation', error);
            setReservation([])
@@ -63,6 +80,51 @@ export default function ProReservation ({navigation}) {
  };
 
  }
+
+const updateStatut  = async (idReservation, nouveauStatut) => {
+     try{
+        const { error } = await supabase
+          .from('reservation_transport')
+          .update({ statut: nouveauStatut })
+          .eq('id_reservation', idReservation);
+
+        if (error) throw error;
+
+        // Si la réservation est annulée, on libère les places qui lui étaient liées
+        if (nouveauStatut === 'annulee') {
+          const { data: placesReservees, error: placesError } = await supabase
+            .from('reservation_places')
+            .select('id_place')
+            .eq('id_reservation', idReservation);
+
+          if (placesError) throw placesError;
+
+          const idsPlaces = (placesReservees || []).map((rp) => rp.id_place);
+
+          if (idsPlaces.length > 0) {
+            const { error: updatePlacesError } = await supabase
+              .from('places')
+              .update({ statut: 'disponible' })
+              .in('id_place', idsPlaces);
+
+            if (updatePlacesError) throw updatePlacesError;
+          }
+        }
+
+       Alert.alert('Succès', `Réservation ${nouveauStatut === 'confirmee' ? 'confirmée' : 'annulée'}`);
+       loadReservation();
+      }catch(error){
+      console.error('Erreur mise à jour de statut:', error);
+      Alert.alert('Erreur', 'Impossible de mise à jour');
+
+      }
+}
+
+const getStatutLabel = (statut) => {
+if(statut == 'confirmee') return 'Confirmée';
+if(statut == 'annulee') return 'Annulée';
+return 'En attente' ;
+}
 
  useFocusEffect(
     React.useCallback(() => {
@@ -99,19 +161,48 @@ return(
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.clientNom}>{item.client_nom}</Text>
-                <View style={[styles.badge, styles.badgeConfirmed]}>
-                  <Text style={styles.badgeText}> Confirmée</Text>
-                </View>
+               
               </View>
 
               <Text style={styles.vehiculeNom}>{item.vehicule_nom}</Text>
-              <Text style={styles.info}>📍 {item.ville_depart} → {item.ville_arrivee}</Text>
-              <Text style={styles.info}>📅 {item.date_depart} à {item.heure_depart}</Text>
+              <Text style={styles.info}>Destination: {item.ville_depart} → {item.ville_arrivee}</Text>
+              <Text style={styles.info}>Départ: {item.date_depart} à {item.heure_depart}</Text>
               <Text style={styles.info}>
-                🪑 {item.nb_places} place(s) : {item.places}
+                 Place réserver: {item.places}
               </Text>
-              <Text style={styles.totalPrice}>💰 Total : {item.prix_total} Ar</Text>
-              <Text style={styles.phone}>📞 {item.client_telephone || 'Non renseigné'}</Text>
+              <Text style={styles.totalPrice}>Total: {item.prix_total} Ar</Text>
+              <Text style={styles.phone}>Téléphone: {item.client_telephone || 'Non renseigné'}</Text>
+
+                {/* Actions (pour les réservations en attente) */}
+<View style={styles.cardActions}>
+  {item.statut === 'en_attente' && (
+    <>
+      <TouchableOpacity
+        style={[styles.actionButton, styles.confirmButton]}
+        onPress={() => updateStatut(item.id_reservation, 'confirmee')}
+      >
+        <Text style={styles.actionButtonText}> Confirmer</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.actionButton, styles.annulerButton]}
+        onPress={() => updateStatut(item.id_reservation, 'annulee')}
+      >
+        <Text style={styles.actionButtonText}> Annuler</Text>
+      </TouchableOpacity>
+    </>
+  )}
+  {item.statut !== 'en_attente' && (
+    <View style={[
+      styles.statusBadge,
+      item.statut === 'confirmee' && styles.statusConfirmed,
+      item.statut === 'annulee' && styles.statusAnnulee,
+    ]}>
+      <Text style={styles.statusText}>{getStatutLabel(item.statut)}</Text>
+    </View>
+  )}
+</View>
+ 
+
             </View>
           )}
         />
@@ -162,8 +253,44 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   badgeConfirmed: { backgroundColor: '#d4edda' },
   badgeText: { fontSize: 12, fontWeight: 'bold', color: '#155724' },
+  cardActions: {
+  flexDirection: 'row',
+  marginTop: 10,
+  gap: 8,
+},
+actionButton: {
+  paddingHorizontal: 16,
+  paddingVertical: 8,
+  borderRadius: 8,
+  alignItems: 'center',
+  flex: 1,
+},
+confirmButton: {
+  backgroundColor: '#28a745',
+},
+annulerButton: {
+  backgroundColor: '#dc3545',
+},
+actionButtonText: {
+  color: '#fff',
+  fontWeight: 'bold',
+  fontSize: 14,
+},
+statusBadge: {
+  paddingHorizontal: 12,
+  paddingVertical: 6,
+  borderRadius: 8,
+  alignItems: 'center',
+  flex: 1,
+},
+statusConfirmed: {
+  backgroundColor: '#d4edda',
+},
+statusAnnulee: {
+  backgroundColor: '#f8d7da',
+},
+statusText: {
+  fontWeight: 'bold',
+  fontSize: 14,
+},
 });
-   
-  
-
-   

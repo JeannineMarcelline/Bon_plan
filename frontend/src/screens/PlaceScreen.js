@@ -8,10 +8,11 @@ import {
   SafeAreaView,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export default function PlacesScreen() {
@@ -19,6 +20,7 @@ export default function PlacesScreen() {
   const navigation = useNavigation();
   const { idVehicule } = route.params;
   const { user } = useAuth();
+  const [showRecap, setShowRecap] = useState(false);
 
   const [places, setPlaces] = useState([]);
   const [selectedPlace, setSelectedPlace] = useState([]);
@@ -38,21 +40,23 @@ export default function PlacesScreen() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // 1. Récupérer les infos du véhicule
-        const vehiculeResult = await db.getAllAsync(
-          'SELECT * FROM vehicules WHERE id_vehicule = ?',
-          [idVehicule]
-        );
-        if (vehiculeResult.length > 0) {
-          setVehicule(vehiculeResult[0]);
-        }
+        const {data: vehiculeData, error: vehiculeError} = await supabase
+        .from('vehicules')
+        .select('*')
+        .eq('id_vehicule', idVehicule)
+        .maybeSingle();
 
-        // 2. Récupérer les places
-        const placesResult = await db.getAllAsync(
-          'SELECT * FROM places WHERE id_vehicule = ? ORDER BY numero_place',
-          [idVehicule]
-        );
-        setPlaces(placesResult);
+        if(vehiculeError) throw vehiculeError;
+        if(vehiculeData) {
+          setVehicule(vehiculeData);
+        }
+        const {data: placesData, error: placesError} = await supabase
+        .from('places')
+        .select('*')
+        .eq('id_vehicule', idVehicule)
+        .order('numero_place');
+        if(placesError) throw placesError;
+        setPlaces(placesData)
       } catch (error) {
         console.error('Erreur chargement places:', error);
         Alert.alert('Erreur', 'Impossible de charger les places');
@@ -75,53 +79,86 @@ export default function PlacesScreen() {
     }
     setReserving(true);
     try {
-      //verifier que toute les places sont disponible
-      for(const place of selectedPlace) {
-         const check = await db.getAllAsync(
-          'SELECT statut FROM places WHERE id_place = ?',
-          [place.id_place]
-         );
-         if(check[0]?.statut === 'reservee'){
-          Alert.alert('Désolé', `la place ${place.numero_place} vient d'être réservée`);
-          setReserving(false);
-          return;
-         }
-      }
-      
-    const totalPrix = selectedPlace.length * vehicule.prix_place;
+      try {
+  const idsPlacesSelectionnees = selectedPlace.map((p) => p.id_place);
 
-    const result = await db.runAsync(
-      `INSERT INTO reservation_transport (id_utilisateur, id_vehicule, date_reservation, prix_total, statut)
-       VALUES (?, ?, ?, ?, ?)`, [user.id, idVehicule, new Date().toISOString().split('T')[0], totalPrix, 'confirmee']
-    );
+  // 1. Vérification + réservation en une seule requête atomique
+  const { data: placesReservees, error: updateError } = await supabase
+    .from('places')
+    .update({ statut: 'reservee' })
+    .in('id_place', idsPlacesSelectionnees)
+    .eq('statut', 'disponible')
+    .select();
 
-    const idReservation = result.lastInsertRowId;
+  if (updateError) throw updateError;
 
-     for(const place of selectedPlace) {
-      await db.runAsync(`INSERT INTO reservation_places (id_reservation, id_place)
-         VALUES (?, ?)`, [ idReservation, place.id_place]
-        );
-
-        await db.runAsync(
-        'UPDATE places SET statut = ? WHERE id_place = ?',
-        ['reservee', place.id_place]
-      );
+  if (placesReservees.length < selectedPlace.length) {
+    const idsRecuperees = placesReservees.map((p) => p.id_place);
+    if (idsRecuperees.length > 0) {
+      await supabase
+        .from('places')
+        .update({ statut: 'disponible' })
+        .in('id_place', idsRecuperees);
     }
+    Alert.alert('Désolé', 'Une ou plusieurs places viennent d\'être réservées par quelqu\'un d\'autre. Merci de resélectionner.');
+    setReserving(false);
+    return;
+  }
 
-      Alert.alert(
-        'Réservation confirmée!',
-        `${selectedPlace.length} places réservée - Total : ${totalPrix} Ar`,
-         [{ text : 'OK', onPress: () => navigation.navigate('MesReservations')}]
-      );
+  // 2. Calcul du prix total (inchangé)
+  const totalPrix = selectedPlace.length * vehicule.prix_place;
 
+  // 3. Créer la réservation (déjà adapté précédemment)
+  const { data: reservation, error: reservationError } = await supabase
+    .from('reservation_transport')
+    .insert({
+      id_utilisateur: user.id,
+      id_vehicule: idVehicule,
+      date_reservation: new Date().toISOString().split('T')[0],
+      prix_total: totalPrix,
+    })
+    .select()
+    .single();
 
-      // Rafraîchir les places
-      const updatedPlaces = await db.getAllAsync(
-        'SELECT * FROM places WHERE id_vehicule = ? ORDER BY numero_place',
-        [idVehicule]
-      );
-      setPlaces(updatedPlaces);
-      setSelectedPlace([]);
+  if (reservationError) throw reservationError;
+
+  // 4. Lier les places à cette réservation (déjà adapté précédemment)
+  const reservationPlaces = selectedPlace.map((place) => ({
+    id_reservation: reservation.id_reservation,
+    id_place: place.id_place,
+  }));
+
+  const { error: rpError } = await supabase
+    .from('reservation_places')
+    .insert(reservationPlaces);
+
+  if (rpError) throw rpError;
+
+  
+
+  Alert.alert(
+    'Réservation confirmée!',
+    `${selectedPlace.length} places réservée - Total : ${totalPrix} Ar`,
+    [{ text: 'OK', onPress: () => navigation.navigate('MesReservations') }]
+  );
+
+  // 5. Rafraîchir les places (déjà adapté précédemment)
+  const { data: updatedPlaces, error: refreshError } = await supabase
+    .from('places')
+    .select('*')
+    .eq('id_vehicule', idVehicule)
+    .order('numero_place');
+
+  if (refreshError) throw refreshError;
+  setPlaces(updatedPlaces);
+  setSelectedPlace([]);
+
+} catch (error) {
+  console.error('Erreur réservation:', error);
+  Alert.alert('Erreur', 'Impossible de réserver la place');
+} finally {
+  setReserving(false);
+}
     } catch (error) {
       console.error('Erreur réservation:', error);
       Alert.alert('Erreur', 'Impossible de réserver la place');
@@ -261,18 +298,77 @@ export default function PlacesScreen() {
       Total : {selectedPlace.length * vehicule.prix_place} Ar
     </Text>
     <TouchableOpacity
-      style={styles.reserveButton}
-      onPress={handleReservation}
-      disabled={reserving}
-    >
-      <Text style={styles.reserveButtonText}>
-        {reserving ? 'Réservation en cours...' : ` Réserver ${selectedPlace.length} place(s)`}
-      </Text>
-    </TouchableOpacity>
+  style={styles.reserveButton}
+  onPress={() => setShowRecap(true)}  // au lieu de onPress={handleReservation}
+  disabled={reserving}
+>
+  <Text style={styles.reserveButtonText}>
+    Voir le récapitulatif
+  </Text>
+</TouchableOpacity>
   </View>
 )}
  
       </ScrollView>
+      <Modal
+  animationType="slide"
+  transparent={true}
+  visible={showRecap}
+  onRequestClose={() => setShowRecap(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.recapContent}>
+      <Text style={styles.recapTitle}>Récapitulatif</Text>
+
+      <View style={styles.recapRow}>
+        <Text style={styles.recapLabel}>Véhicule</Text>
+        <Text style={styles.recapValue}>{vehicule?.nom}</Text>
+      </View>
+      <View style={styles.recapRow}>
+        <Text style={styles.recapLabel}>Trajet</Text>
+        <Text style={styles.recapValue}>{vehicule?.ville_depart} → {vehicule?.ville_arrivee}</Text>
+      </View>
+      <View style={styles.recapRow}>
+        <Text style={styles.recapLabel}>Date</Text>
+        <Text style={styles.recapValue}>{vehicule?.date_depart} à {vehicule?.heure_depart}</Text>
+      </View>
+      <View style={styles.recapRow}>
+        <Text style={styles.recapLabel}>Places sélectionnées</Text>
+        <Text style={styles.recapValue}>
+          {selectedPlace.map((p) => p.numero_place).join(', ')}
+        </Text>
+      </View>
+      <View style={styles.recapDivider} />
+      <View style={styles.recapRow}>
+        <Text style={styles.recapLabelTotal}>Total</Text>
+        <Text style={styles.recapValueTotal}>
+          {selectedPlace.length * vehicule?.prix_place} Ar
+        </Text>
+      </View>
+
+      <View style={styles.recapButtons}>
+        <TouchableOpacity
+          style={styles.recapCancelButton}
+          onPress={() => setShowRecap(false)}
+        >
+          <Text style={styles.recapCancelText}>Modifier</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.recapConfirmButton}
+          onPress={() => {
+            setShowRecap(false);
+            handleReservation(); // la vraie réservation se fait ICI
+          }}
+          disabled={reserving}
+        >
+          <Text style={styles.recapConfirmText}>
+            {reserving ? 'Réservation...' : 'Confirmer'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </View>
+</Modal>
     </SafeAreaView>
   );
 }
@@ -364,4 +460,27 @@ totalPrice: {
   color: '#1E3A5F',
   marginVertical: 6,
 },
+modalOverlay: {
+  flex: 1,
+  backgroundColor: 'rgba(0,0,0,0.5)',
+  justifyContent: 'flex-end',
+},
+recapContent: {
+  backgroundColor: '#fff',
+  borderTopLeftRadius: 24,
+  borderTopRightRadius: 24,
+  padding: 24,
+},
+recapTitle: { fontSize: 20, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 16 },
+recapRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+recapLabel: { fontSize: 14, color: '#6C757D' },
+recapValue: { fontSize: 14, color: '#1A1A2E', fontWeight: '600' },
+recapDivider: { height: 1, backgroundColor: '#f0f0f0', marginVertical: 10 },
+recapLabelTotal: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E' },
+recapValueTotal: { fontSize: 18, fontWeight: 'bold', color: '#1E3A5F' },
+recapButtons: { flexDirection: 'row', gap: 10, marginTop: 20 },
+recapCancelButton: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#f0f0f0', alignItems: 'center' },
+recapCancelText: { color: '#1A1A2E', fontWeight: '600' },
+recapConfirmButton: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#1E3A5F', alignItems: 'center' },
+recapConfirmText: { color: '#fff', fontWeight: '600' },
 });

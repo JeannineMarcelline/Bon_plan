@@ -8,15 +8,15 @@ import {
   Alert,
   ScrollView,
   Image,
-  KeyboardAvoidingView, 
+  KeyboardAvoidingView,
   Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../context/AuthContext';
-
+import { useAuth } from '../context/AuthContext'; // 👈 on utilise le contexte, pas Supabase directement
 
 export default function RegisterScreen({ navigation }) {
+  const { register } = useAuth(); // 👈 on récupère la fonction déjà écrite dans AuthContext
 
   const [nom, setNom] = useState('');
   const [email, setEmail] = useState('');
@@ -24,15 +24,31 @@ export default function RegisterScreen({ navigation }) {
   const [telephone, setTelephone] = useState('');
   const [role, setRole] = useState('client');
   const [loading, setLoading] = useState(false);
-
-  const { register } = useAuth();
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleRoleSelect = (selectedRole) => {
-    console.log('🔄 Rôle sélectionné:', selectedRole);
     setRole(selectedRole);
   };
 
+ const formatPhoneNumber = (text) => {
+ 
+  const cleaned = text.replace(/\D/g, '');
+
+  const limited = cleaned.slice(0, 10);
+
+  let formatted = '';
+
+  for (let i = 0; i < limited.length; i++) {
+    if (i === 3 || i === 5 || i === 8) {
+      formatted += ' ';
+    }
+    formatted += limited[i];
+  }
+  
+  return formatted;
+};
   const handleRegister = async () => {
+    
     if (!nom || !email || !password || !telephone) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs');
       return;
@@ -43,45 +59,41 @@ export default function RegisterScreen({ navigation }) {
       return;
     }
 
-    // 🔍 Vérification avant envoi
-    console.log('📝 Données d\'inscription:', {
-      nom,
-      email,
-      telephone,
-      role: role, // Vérifie que c'est 'pro' ou 'client'
-    });
-
     setLoading(true);
-    try {
-      const result = await register(nom, email, password, telephone, role);
-      
-      console.log('✅ Résultat inscription:', result);
-      
-      if (result.success) {
-        Alert.alert(
-          'Inscription réussie',
-          `Bienvenue ${result.user.nom} ! Vous êtes maintenant un ${role === 'pro' ? 'professionnel' : 'client'}.`,
-          [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
-        );
+
+   
+    const result = await register(nom, email, password, telephone, role);
+
+    setLoading(false);
+
+    if (!result.success) {
+      console.log(' Erreur inscription:', result.error);
+
+      if (result.error.includes('User already registered')) {
+        Alert.alert('Erreur', 'Cet email est déjà utilisé. Veuillez vous connecter.');
       } else {
         Alert.alert('Erreur', result.error);
       }
-    } catch (error) {
-      console.log('❌ ERREUR EXACTE:', error);
-      Alert.alert('Erreur', error.message || 'Une erreur est survenue');
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    
+    Alert.alert(
+      'Inscription réussie ',
+      `Bienvenue ${nom} ! Vous êtes maintenant un ${role === 'pro' ? 'professionnel' : 'client'}.`
+    );
+
+   
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
-          style={{ flex: 1 }} 
+      <KeyboardAvoidingView
+          style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
-        <ScrollView 
+        <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
@@ -167,26 +179,35 @@ export default function RegisterScreen({ navigation }) {
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Mot de passe</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Au moins 6 caractères"
+             <View style={styles.passwordContainer} >
+              <TextInput
+              style={styles.passwordInput}
+              ptlaceholder="Au moins 6 caractères"
               placeholderTextColor="#9CA3AF"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
             />
+             <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)} >
+             <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#7f8c8d" />
+            </TouchableOpacity>
+            </View>  
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Téléphone</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="034 00 000 00"
-              placeholderTextColor="#9CA3AF"
-              value={telephone}
-              onChangeText={setTelephone}
-              keyboardType="phone-pad"
-            />
+           <TextInput
+          style={styles.input}
+          placeholder="034 00 000 00"
+          placeholderTextColor="#9CA3AF"
+          value={telephone}
+          onChangeText={(text) => {
+          const formatted = formatPhoneNumber(text);
+          setTelephone(formatted);
+              }}
+  keyboardType="phone-pad"
+  maxLength={13} 
+/>
           </View>
 
           <TouchableOpacity
@@ -304,6 +325,23 @@ const styles = StyleSheet.create({
     borderColor: '#D1D5DB',
     color: '#111827',
   },
+  passwordContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#f8f9fa',
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: '#e0e0e0',
+    },
+    passwordInput: {
+      flex: 1, 
+      padding: 13,
+      fontSize: 12,
+      color: '#2c3e50',
+    },
+    eyeIcon: {
+      paddingHorizontal: 14,
+    },
   registerButton: {
     backgroundColor: '#2563EB',
     borderRadius: 12,

@@ -14,8 +14,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
 import { useFocusEffect } from '@react-navigation/native';
+
 
 export default function HomeScreen() {
 
@@ -58,18 +59,25 @@ return matchText && matchCategory && matchVille && matchNote && matchPrix;
 
 const loadCategories = async () => {
   try {
-    const result = await db.getAllAsync('SELECT * FROM categories ORDER BY nom');
-    setCategoriesList(result);
+    
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .order('nom');
+
+    if (error) throw error;
+    setCategoriesList(data);
   } catch (error) {
     console.error('Erreur chargement catégories:', error);
   }
 }; 
 
+
 useFocusEffect(
   React.useCallback(() => {
     loadEntreprises();
     loadVilles();
-    loadCategories(); // ← AJOUTE CETTE LIGNE
+    loadCategories(); 
   }, [])
 );
   const renderCategory = ({ item }) => (
@@ -83,24 +91,39 @@ useFocusEffect(
 
  const loadEntreprises = async () => {
   try {
-    const result = await db.getAllAsync(`
-      SELECT e.*, v.nom as ville, c.nom as categorie,
-      COALESCE(
-        (SELECT AVG(note) FROM avis WHERE avis.id_entreprise = e.id),
-        0
-      ) as note_moyenne,
-      COALESCE(
-        (SELECT COUNT(*) FROM avis WHERE avis.id_entreprise = e.id),
-        0
-      ) as nb_avis
-      FROM entreprises e
-      LEFT JOIN villes v ON e.ville_id = v.id
-      LEFT JOIN categories c ON e.categorie_id = c.id
-      WHERE e.statutValidation = 'valide'
-      AND e.utilisateur_id IN (SELECT id FROM utilisateurs)
-      ORDER BY e.id DESC
-    `);
-    setEntreprises(result);
+   
+    const { data, error } = await supabase
+      .from('entreprises')
+      .select(`
+        *,
+        villes ( nom ),
+        categories ( nom ),
+        avis ( note )
+      `)
+      .eq('statutvalidation', 'valide')
+      .order('id', { ascending: false });
+
+    if (error) throw error;
+
+ 
+    const entreprisesAvecStats = (data || []).map((e) => {
+      const notes = e.avis || [];
+      const note_moyenne =
+        notes.length > 0
+          ? notes.reduce((somme, a) => somme + a.note, 0) / notes.length
+          : 0;
+
+      return {
+        ...e,
+       
+        ville: e.villes?.nom || '',
+        categorie: e.categories?.nom || '',
+        note_moyenne,
+        nb_avis: notes.length,
+      };
+    });
+
+    setEntreprises(entreprisesAvecStats);
   } catch (error) {
     console.error('Erreur chargement entreprises:', error);
   } finally {
@@ -109,13 +132,19 @@ useFocusEffect(
 };
   const loadVilles = async() => {
   try{
-  const result = await db.getAllAsync(`
-    SELECT DISTINCT v.nom as ville FROM entreprises e
-    LEFT JOIN villes v ON e.ville_id = v.id
-    WHERE e.statutValidation = 'valide'
-    ORDER BY v.nom
-    `);
-  setViillesList(result.map(item => item.ville));
+    const { data, error } = await supabase
+      .from('entreprises')
+      .select('villes ( nom )')
+      .eq('statutvalidation', 'valide');
+
+    if (error) throw error;
+
+    const toutesLesVilles = (data || [])
+      .map((item) => item.villes?.nom)
+      .filter(Boolean); 
+    const villesUniques = [...new Set(toutesLesVilles)].sort();
+
+    setViillesList(villesUniques);
   }catch(error){
      console.error("Erreur de chargement de ville: ", error)
   }
@@ -183,7 +212,8 @@ useFocusEffect(
           </TouchableOpacity>
         </View>
       </View>
-      
+     
+
       {/* Catégories améliorées sans icônes */}
       <View style={styles.categoriesContainer}>
         <ScrollView 
@@ -270,7 +300,7 @@ useFocusEffect(
         }
         contentContainerStyle={styles.listContent}
       />
-
+      
       {/* Modal filtre amélioré */}
       <Modal
         animationType="slide"
@@ -310,7 +340,6 @@ useFocusEffect(
                 ))}
               </ScrollView>
             </View>
-
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>⭐ Note minimum</Text>
               <View style={styles.ratingFilter}>
@@ -327,7 +356,7 @@ useFocusEffect(
                 ))}
               </View>
             </View>
-
+  
             <View style={styles.modalButtons}>
               <TouchableOpacity style={[styles.modalButton, styles.resetButton]} onPress={resetFilters}>
                 <Ionicons name="refresh-outline" size={18} color="#2c3e50" />

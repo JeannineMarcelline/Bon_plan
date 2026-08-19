@@ -18,7 +18,7 @@ import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
 import { useAuth } from "../context/AuthContext";
 
 export default function CompanyScreen() {
@@ -41,15 +41,18 @@ export default function CompanyScreen() {
   // fonction pour l'avis
    const loadAvis = async (entrepriseId) => {
   try {
-    const result = await db.getAllAsync(`
-      SELECT avis.*, utilisateurs.nom as nom_utilisateur
-      FROM avis
-      LEFT JOIN utilisateurs ON avis.id_utilisateur = utilisateurs.id
-      WHERE avis.id_entreprise = ?
-      ORDER BY avis.date_avis DESC
-    `, [entrepriseId]);
-    setAvisList(result);
+    const {data, error} = await supabase
+    .from('avis')
+    .select('*, utilisateurs (nom)')
+    .eq('id_entreprise', entrepriseId)
+    .order('date_avis', {ascending: false});
 
+    if (error) throw error;
+    const result = (data || []).map((a) => ({
+      ...a,
+      nom_utilisateur: a.utilisateurs?.nom || 'Anonyme',
+    }));
+    setAvisList(result);
     const count = result.length;
     setNbAvis(count);
     if(count > 0 ) {
@@ -74,10 +77,16 @@ export default function CompanyScreen() {
     return;
    }
    setSubmitting(true);
+
     try{
-      await db.runAsync('INSERT INTO avis (id_utilisateur, id_entreprise, note, commentaire ) VALUES (?, ?, ?, ?)',
-        [user.id, entreprise.id,note, commentaire]
-      );
+     const {error} = await supabase.from('avis').insert({
+      id_utilisateur: user.id,
+      id_entreprise: entreprise.id,
+      note,
+      commentaire,
+     });
+     if(error) throw error;
+
    Alert.alert('Succès', 'L\'avis est bien insérer ');
    setNote(0);
    setCommentaire('');
@@ -104,17 +113,22 @@ export default function CompanyScreen() {
   useEffect(() => {
     const loadCompany = async () => {
       try {
-        const result = await db.getAllAsync(`
-          SELECT e.*, v.nom as ville, c.nom as categorie
-          FROM entreprises e
-          LEFT JOIN villes v ON e.ville_id = v.id
-          LEFT JOIN categories c ON e.categorie_id = c.id
-          WHERE e.id = ?
-        `, [id]);
-        if (result.length > 0) {
-          setEntreprise(result[0]);
-          await loadAvis(result[0].id);
-        }
+       const {data, error} = await supabase
+       .from('entreprises')
+       .select('*, villes(nom), categories (nom)')
+       .eq('id', id)
+       .maybeSingle();
+       if(error) throw error;
+
+       if(data) {
+        const entreprisesFormatee = {
+          ...data,
+          ville: data.villes?.nom || '',
+          categorie: data.categories?.nom || '',
+        };
+        setEntreprise(entreprisesFormatee);
+        await loadAvis(entreprisesFormatee.id);
+       }
       } catch (error) {
         console.error('Erreur chargement entreprise:', error);
       } finally {
@@ -122,6 +136,7 @@ export default function CompanyScreen() {
       }
     };
     loadCompany();
+    
    
   }, [id]);
 
@@ -347,7 +362,7 @@ export default function CompanyScreen() {
      
  
           {/* Section spécifique au TRANSPORT */}
-          {entreprise.type_activite === 'transport' && (
+          {entreprise.categorie?.toLowerCase() === 'transport' && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>🚐 Véhicules disponibles</Text>
               <TouchableOpacity
@@ -361,7 +376,7 @@ export default function CompanyScreen() {
           )}
 
           {/* Section spécifique à l'HÔTEL (exemple pour plus tard) */}
-          {entreprise.type_activite === 'hotel' && (
+          {entreprise.categorie?.toLowerCase() === 'hôtel' && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>🛏️ Chambres disponibles</Text>
               <Text style={styles.infoText}>Fonctionnalité à venir...</Text>

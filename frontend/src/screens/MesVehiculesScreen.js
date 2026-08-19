@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
 
 export default function MesVehiculesScreen({ navigation }) {
   const { user } = useAuth();
@@ -22,24 +22,44 @@ export default function MesVehiculesScreen({ navigation }) {
 
   const loadVehicules = async () => {
     try {
-      const entreprises = await db.getAllAsync('SELECT id FROM entreprises WHERE utilisateur_id = ?', [user.id]);
+      const { data: entreprise, error: entrepriseError } = await supabase
+      .from('entreprises')
+      .select('id')
+      .eq('utilisateur_id', user.id)
+      .maybeSingle();
 
-      if (entreprises.length === 0) {
+      if (entrepriseError) throw entrepriseError;
+
+      if(!entreprise) {
         setVehicules([]);
         setLoading(false);
         return;
       }
 
-      const idEntreprises = entreprises[0].id;
+      const {data, error} = await supabase
+      .from('vehicules')
+      .select('*, places (id_place)')
+      .eq('id_entreprise', entreprise.id)
+      .order('id_vehicule', {ascending: false});
 
-      const result = await db.getAllAsync(`
-        SELECT v.*, 
-        (SELECT COUNT(*) FROM places WHERE places.id_vehicule = v.id_vehicule) as nb_places,
-        (SELECT COUNT(*) FROM reservation_transport WHERE id_vehicule = v.id_vehicule) as nb_reservations
-        FROM vehicules v
-        WHERE v.id_entreprise = ?
-        ORDER BY v.id_vehicule DESC`, [idEntreprises]);
-      setVehicules(result);
+      if(error) throw error;
+
+      const vehiculesAvecStats = await Promise.all(
+        (data || []).map(async(v) => {
+          const {count} = await supabase
+          .from('reservation_transport')
+          .select('*', {count: 'exact', head: true})
+          .eq('id_vehicule', v.id_vehicule);
+
+          return{
+            ...v,
+            nb_places: (v.places || []).length,
+            nb_reservations: count || 0,
+          };
+        })
+      );
+   setVehicules(vehiculesAvecStats);
+
     } catch (error) {
       console.error('Erreur de chargement de véhicule', error);
       Alert.alert('Erreur', 'Impossible de charger les véhicules');
@@ -54,52 +74,56 @@ export default function MesVehiculesScreen({ navigation }) {
     }, [])
   );
 
-const deleteVehicule = (id, nom) => {
-  // Verifier si c'est reserver
-const checkReservations  = async () => {
+const deleteVehicule = async (id, nom) => {
+  // Verifier si le véhicule a des réservations actives avant de proposer la suppression
   try{
-  const result = await db.getAllAsync('SELECT COUNT(*)  as total FROM reservation_transport WHERE id_vehicule = ?', [id]);
+    const { count, error: countError } = await supabase
+      .from('reservation_transport')
+      .select('*', { count: 'exact', head: true })
+      .eq('id_vehicule', id)
+      .in('statut', ['en_attente', 'confirmee']);
 
-  const nbReservations =  result[0]?.total || 0 ;
+    if (countError) throw countError;
 
-  if(nbReservations > 0) {
-     Alert.alert(
-       'Suppression impossible',
-       `Ce vehicule à ${nbReservations} reservations en cours. Vous ne pouvez pas supprimer`,
-        [{text : "OK"}]
-     );
-     return;
-  }
- Alert.alert(
-      'Confirmation',
-      `Voulez-vous vraiment supprimer "${nom}" ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await db.runAsync('DELETE FROM places WHERE id_vehicule = ?', [id]);
-              await db.runAsync('DELETE FROM vehicules WHERE id_vehicule = ?', [id]);
-              Alert.alert('Succès', 'Véhicule supprimé');
-              loadVehicules();
-            } catch (error) {
-              console.error('Erreur de suppression', error);
-              Alert.alert('Erreur', 'Impossible de supprimer');
-            }
-          },
+    const nbReservations = count || 0;
+
+    if(nbReservations > 0) {
+      Alert.alert('Suppression impossible', `Ce vehicule à ${nbReservations} reservations en cours. Vous ne pouvez pas supprimer`, [{text: "OK"}]);
+      return;
+    }
+    Alert.alert('Confirmation', `Voulez-vous vraiment supprimer "${nom}" ?`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const { error: placesError } = await supabase
+              .from('places')
+              .delete()
+              .eq('id_vehicule', id);
+            if (placesError) throw placesError;
+
+            const { error: vehiculeError } = await supabase
+              .from('vehicules')
+              .delete()
+              .eq('id_vehicule', id);
+            if (vehiculeError) throw vehiculeError;
+
+            Alert.alert('Succès', 'Véhicule supprimé');
+            loadVehicules();
+          } catch (error) {
+            console.error('Erreur de suppression', error);
+            Alert.alert('Erreur', 'Impossible de supprimer');
+          }
         },
-      ]
-    );
+      },
+    ]);
   }catch(error){
-  console.error('Erreur vérification réservations:', error);
-  Alert.alert('Erreur', 'Impossible de vérifier les réservations');
+    console.error('Erreur vérification réservations:', error);
+    Alert.alert('Erreur', 'Impossible de vérifier les réservations');
   }
 };
- checkReservations();
-
-}
 
 
   // MODIFIE: Nouveau design de carte avec labels
@@ -150,7 +174,7 @@ const checkReservations  = async () => {
           <Text style={styles.infoValue}>{item.prix_place || item.prix} Ar</Text>
           <Ionicons name="people-outline" size={16} color="#6B7280" style={styles.infoIconSpacing} />
           <Text style={styles.infoLabel}>Places :</Text>
-          <Text style={styles.infoValue}>{item.nb_places || 0}</Text>
+          <Text style={styles.infoValue}>{item.capacite || 0}</Text>
         </View>
 
         

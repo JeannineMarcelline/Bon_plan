@@ -13,11 +13,12 @@ import {
   Platform
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import db from '../database/database';
+import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 
 export default function AddVehiculeScreen({ navigation }) {
   const { user } = useAuth();
@@ -82,6 +83,30 @@ export default function AddVehiculeScreen({ navigation }) {
     }
   };
 
+
+const uploadPhoto = async (uri, userId) => {
+  try {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const arrayBuffer = decode(base64);
+    const fileExt = uri.split('.').pop();
+    const fileName = `${userId}-${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('vehicules')
+      .upload(fileName, arrayBuffer, { contentType: `image/${fileExt}` });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from('vehicules').getPublicUrl(fileName);
+    return data.publicUrl;
+  } catch (error) {
+    console.error('Erreur upload photo véhicule:', error);
+    return null;
+  }
+};
+
   const handleSubmit = async () => {
     if (!nom || !type || !capacite || !prix || !villeDepart || !villeArrive || !dateDepart || !heureDepart) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs');
@@ -89,40 +114,60 @@ export default function AddVehiculeScreen({ navigation }) {
     }
 
     try {
-      const entreprises = await db.getAllAsync('SELECT id FROM entreprises WHERE utilisateur_id = ?', [user.id]);
-      if (entreprises.length === 0) {
-        Alert.alert('Erreur', 'Vous n\'avez pas encore d\'entreprise');
-        return;
-      }
-      const idEntreprise = entreprises[0].id;
+  const { data: entreprise, error: entrepriseError } = await supabase
+    .from('entreprises')
+    .select('id')
+    .eq('utilisateur_id', user.id)
+    .maybeSingle();
 
-      // Insérer avec places_cote_chauffeur
-      await db.runAsync(
-        `INSERT INTO vehicules (
-          nom, type, photo, capacite, prix_place, 
-          ville_depart, ville_arrivee, date_depart, heure_depart, 
-          id_entreprise, places_cote_chauffeur
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          nom, type, photo, parseInt(capacite), parseFloat(prix),
-          villeDepart, villeArrive, dateDepart, heureDepart,
-          idEntreprise, parseInt(placesCoteChauffeur)
-        ]
-      );
+  if (entrepriseError) throw entrepriseError;
+  if (!entreprise) {
+    Alert.alert('Erreur', 'Vous n\'avez pas encore d\'entreprise');
+    return;
+  }
 
-      const vehicule = await db.getAllAsync('SELECT id_vehicule FROM vehicules ORDER BY id_vehicule DESC LIMIT 1');
-      const idVehicule = vehicule[0].id_vehicule;
 
-      // Créer les places
-      for (let i = 1; i <= parseInt(capacite); i++) {
-        await db.runAsync(
-          `INSERT INTO places (id_vehicule, numero_place, position, statut) VALUES (?, ?, ?, 'disponible')`,
-          [idVehicule, i, 'standard']
-        );
-      }
+  let photoUrl = null;
+  if (photo) {
+    photoUrl = await uploadPhoto(photo, user.id);
+  }
 
-      Alert.alert('Succès', `Véhicule ajouté avec ${capacite} places !`);
-      navigation.goBack();
+  const { data: nouveauVehicule, error: vehiculeError } = await supabase
+    .from('vehicules')
+    .insert({
+      nom,
+      type,
+      photo: photoUrl,
+      capacite: parseInt(capacite),
+      prix_place: parseFloat(prix),
+      ville_depart: villeDepart,
+      ville_arrivee: villeArrive,
+      date_depart: dateDepart,
+      heure_depart: heureDepart,
+      id_entreprise: entreprise.id,
+      places_cote_chauffeur: parseInt(placesCoteChauffeur),
+    })
+    .select()
+    .single();
+
+  if (vehiculeError) throw vehiculeError;
+
+  const placesACreer = [];
+  for (let i = 1; i <= parseInt(capacite); i++) {
+    placesACreer.push({
+      id_vehicule: nouveauVehicule.id_vehicule,
+      numero_place: i,
+      position: 'standard',
+      statut: 'disponible',
+    });
+  }
+
+  const { error: placesError } = await supabase.from('places').insert(placesACreer);
+  if (placesError) throw placesError;
+
+  Alert.alert('Succès', `Véhicule ajouté avec ${capacite} places !`);
+  navigation.goBack();
+      
     } catch (error) {
       console.error('Erreur ajout de véhicule :', error);
       Alert.alert('Erreur', 'Impossible d\'ajouter le véhicule');
