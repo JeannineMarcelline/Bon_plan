@@ -157,13 +157,42 @@ export default function ProfileScreen() {
           </View>
         )}
 
+       <View style={styles.quickActions}>
+  
+  {/* Bouton Mes commandes - navigation vers HomeStack */}
+  <TouchableOpacity
+    style={styles.quickButton}
+    onPress={() => navigation.navigate('Accueil', { screen: 'ClientOrders' })}
+  >
+    <Ionicons name="cube-outline" size={22} color="#2563EB" />
+    <Text style={styles.quickButtonText}>Commandes</Text>
+  </TouchableOpacity>
 
-        
+  {/* Bouton Mes réservations - navigation vers HomeStack */}
+  <TouchableOpacity
+    style={styles.quickButton}
+    onPress={() => navigation.navigate('Accueil', { screen: 'MesReservations' })}
+  >
+    <Ionicons name="bus-outline" size={22} color="#7C3AED" />
+    <Text style={styles.quickButtonText}>Réservations</Text>
+  </TouchableOpacity>
 
-        {/* ===== DÉCONNEXION ===== */}
+  {/* Bouton Favoris - directement accessible (si dans Tab) */}
+  <TouchableOpacity
+    style={styles.quickButton}
+    onPress={() => navigation.navigate('Favoris')}
+  >
+    <Ionicons name="heart-outline" size={22} color="#DC2626" />
+    <Text style={styles.quickButtonText}>Favoris</Text>
+  </TouchableOpacity>
+
+</View>
+
+ {/* ===== DÉCONNEXION ===== */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutButtonText}>Se déconnecter</Text>
         </TouchableOpacity>
+
 
         <Text style={styles.version}>Bon Plan Madagascar v1.0</Text>
       </ScrollView>
@@ -351,4 +380,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#ADB5BD',
   },
+
+  // temporaire 
+
+  quickActions: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'space-between',
+  marginBottom: 16,
+  gap: 8,
+},
+quickButton: {
+  flex: 1,
+  minWidth: '30%',
+  backgroundColor: '#fff',
+  borderRadius: 12,
+  paddingVertical: 14,
+  paddingHorizontal: 10,
+  alignItems: 'center',
+  borderWidth: 1,
+  borderColor: '#F3F4F6',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.03,
+  shadowRadius: 2,
+  elevation: 1,
+  gap: 4,
+},
+quickButtonText: {
+  fontSize: 12,
+  fontWeight: '500',
+  color: '#374151',
+  textAlign: 'center',
+},
 });

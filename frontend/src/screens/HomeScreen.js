@@ -16,6 +16,9 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useFocusEffect } from '@react-navigation/native';
+import NetInfo from '@react-native-community/netinfo';
+import { initOfflineCache, setCacheEntreprises, getCacheEntreprises } from '../database/Offlinecache';
+
 
 
 export default function HomeScreen() {
@@ -72,6 +75,10 @@ const loadCategories = async () => {
   }
 }; 
 
+useEffect(() => {
+  initOfflineCache();
+}, [])
+
 
 useFocusEffect(
   React.useCallback(() => {
@@ -80,17 +87,26 @@ useFocusEffect(
     loadCategories(); 
   }, [])
 );
-  const renderCategory = ({ item }) => (
+ {/** const renderCategory = ({ item }) => (
     <TouchableOpacity style={styles.categoryItem}>
       <View style={styles.categoryIcon}>
         <Text style={styles.categoryIconText}>{item.icone}</Text>
       </View>
       <Text style={styles.categoryText}>{item.nom}</Text>
     </TouchableOpacity>
-  );
+  ); */}
 
  const loadEntreprises = async () => {
   try {
+
+    const netState = await NetInfo.fetch();
+
+    if(!netState.isConnected) {
+      const cached = await getCacheEntreprises();
+      setEntreprises(cached);
+      setLoading(false);
+      return;
+    }
    
     const { data, error } = await supabase
       .from('entreprises')
@@ -124,8 +140,11 @@ useFocusEffect(
     });
 
     setEntreprises(entreprisesAvecStats);
+    await setCacheEntreprises(entreprisesAvecStats);
   } catch (error) {
     console.error('Erreur chargement entreprises:', error);
+    const cached = await getCacheEntreprises();
+    setEntreprises(cached);
   } finally {
     setLoading(false);
   }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Text,
   FlatList,
@@ -14,14 +14,38 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from '../lib/supabase';
 import { useFocusEffect } from "@react-navigation/native";
+import NetInfo from '@react-native-community/netinfo';
+import { initOfflineCache, setCacheReservations, getCacheReservations } from '../database/Offlinecache';
+
 
 export default function MesReservationScreen({ navigation }) {
   const { user } = useAuth();
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    initOfflineCache();
+
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOnline(state.isConnected);
+    });
+
+    return () => unsubscribe();
+  }, [])
 
   const loadReservation = async () => {
     try {
+
+  const netState = await NetInfo.fetch();
+
+    if(!netState.isConnected) {
+      const cached = await getCacheReservations();
+      setReservations(cached);
+      setLoading(false);
+      return;
+    }
+
       const { data, error } = await supabase
         .from('reservation_transport')
         .select(`
@@ -30,8 +54,10 @@ export default function MesReservationScreen({ navigation }) {
           statut,
           prix_total,
           paye,
-          vehicules ( nom, photo, ville_depart, ville_arrivee, date_depart, heure_depart ),
-          reservation_places ( places ( numero_place ) )
+          vehicules ( nom, photo, ville_depart, ville_arrivee, date_depart, heure_depart, entreprises ( nom ) ),
+          reservation_places ( 
+           id_place,
+           places ( numero_place, position) )
         `)
         .eq('id_utilisateur', user.id)
         .order('date_reservation', { ascending: false });
@@ -45,6 +71,7 @@ export default function MesReservationScreen({ navigation }) {
           ...r,
           vehicule_nom: r.vehicules?.nom,
           vehicule_photo: r.vehicules?.photo,
+          entreprise_nom: r.vehicules?.entreprises?.nom,
           ville_depart: r.vehicules?.ville_depart,
           ville_arrivee: r.vehicules?.ville_arrivee,
           date_depart: r.vehicules?.date_depart,
@@ -54,15 +81,79 @@ export default function MesReservationScreen({ navigation }) {
         };
       });
       setReservations(reservationsFormatees);
+      await setCacheReservations(reservationsFormatees);
     } catch (error) {
       console.error('Erreur de chargement de reservations', error);
-      setReservations([]);
+      const cached = await getCacheReservations();
+      setReservations(cached);
     } finally {
       setLoading(false);
     }
   };
 
+ const annulerReservation = async (idReservation) => {
+  Alert.alert(
+    'Confirmation',
+    'Voulez-vous vraiment annuler cette réservation ?',
+    [
+      { text: 'Non', style: 'cancel' },
+      {
+        text: 'Oui, annuler',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            // 1. Récupérer les id_place depuis reservation_places
+            const { data: placesData, error: placesError } = await supabase
+              .from('reservation_places')
+              .select('id_place')
+              .eq('id_reservation', idReservation);
+
+            if (placesError) {
+              console.error('❌ Erreur récupération places:', placesError);
+              Alert.alert('Erreur', 'Impossible de récupérer les places');
+              return;
+            }
+
+            // 2. Mettre à jour le statut de la réservation
+            const { error: reservationError } = await supabase
+              .from('reservation_transport')
+              .update({ statut: 'annulee' })
+              .eq('id_reservation', idReservation);
+
+            if (reservationError) {
+              console.error('❌ Erreur annulation:', reservationError);
+              Alert.alert('Erreur', 'Impossible d\'annuler la réservation');
+              return;
+            }
+
+            // 3. Remettre chaque place en "disponible"
+            if (placesData && placesData.length > 0) {
+              for (const item of placesData) {
+                await supabase
+                  .from('places')
+                  .update({ statut: 'disponible' })
+                  .eq('id_place', item.id_place);  // ← CORRIGÉ : item.id_place
+              }
+            }
+
+            Alert.alert(' Annulation réussie', 'Votre réservation a été annulée.');
+            loadReservation();
+          } catch (error) {
+            console.error(' Erreur:', error);
+            Alert.alert('Erreur', 'Une erreur est survenue');
+          }
+        }
+      }
+    ]
+  );
+};
+
   const handlePayer = async (idReservation) => {
+    if (!isOnline) {
+      Alert.alert('Connexion requise', 'Le paiement nécessite une connexion internet. Réessayez une fois connecté.');
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('reservation_transport')
@@ -78,6 +169,7 @@ export default function MesReservationScreen({ navigation }) {
       Alert.alert('Erreur', 'Impossible d\'enregistrer le paiement');
     }
   };
+
 
   useFocusEffect(
     React.useCallback(() => {
@@ -126,16 +218,8 @@ export default function MesReservationScreen({ navigation }) {
           renderItem={({ item }) => {
             const statutConfig = getStatutConfig(item.statut);
             return (
-              <TouchableOpacity
-  onPress={() => {
-    if (item.statut === 'confirmee' && item.paye) {
-      navigation.navigate('TicketScreen', { idReservation: item.id_reservation });
-    }
-  }}
-  activeOpacity={item.statut === 'confirmee' && item.paye ? 0.8 : 1}
->
      <View style={styles.card}>
-                {/* En-tête : photo + nom véhicule + statut */}
+               
                 <View style={styles.cardHeader}>
                   {item.vehicule_photo ? (
                     <Image source={{ uri: item.vehicule_photo }} style={styles.vehicleImage} />
@@ -146,6 +230,9 @@ export default function MesReservationScreen({ navigation }) {
                   )}
                   <View style={styles.headerInfo}>
                     <Text style={styles.vehiculeNom} numberOfLines={1}>{item.vehicule_nom}</Text>
+                    {item.entreprise_nom && (
+                      <Text style={styles.entrepriseNom} numberOfLines={1}>{item.entreprise_nom}</Text>
+                    )}
                     <View style={[styles.statutBadge, { backgroundColor: statutConfig.bg }]}>
                       <Ionicons name={statutConfig.icon} size={12} color={statutConfig.color} />
                       <Text style={[styles.statutText, { color: statutConfig.color }]}>
@@ -186,24 +273,34 @@ export default function MesReservationScreen({ navigation }) {
 
                   {item.statut === 'confirmee' && !item.paye && (
                     <TouchableOpacity
-                      style={styles.payerButton}
+                      style={[styles.payerButton, !isOnline && styles.payerButtonDisabled]}
                       onPress={() => handlePayer(item.id_reservation)}
                       activeOpacity={0.85}
                     >
                       <Ionicons name="card-outline" size={16} color="#fff" />
-                      <Text style={styles.payerButtonText}>Payer</Text>
+                      <Text style={styles.payerButtonText}>{isOnline ? 'Payer' : 'Hors-ligne'}</Text>
                     </TouchableOpacity>
                   )}
 
                   {item.statut === 'confirmee' && item.paye && (
-                    <View style={styles.payeBadge}>
-                      <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
-                      <Text style={styles.payeBadgeText}>Payé</Text>
-                    </View>
+                    <TouchableOpacity
+                      style={styles.payeBadge}
+                      onPress={() => navigation.navigate('TicketScreen', { idReservation: item.id_reservation })}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="ticket-outline" size={16} color="#16A34A" />
+                      <Text style={styles.payeBadgeText}>Billet</Text>
+                      <Ionicons name="chevron-forward" size={14} color="#16A34A" />
+                    </TouchableOpacity>
+                  )}
+
+                  {item.statut !== 'annulee' && item.statut !== 'terminee' && (
+                    <TouchableOpacity style={styles.annulerButton} onPress={() => annulerReservation(item.id_reservation, item.id_place)} >
+                          <Text style={styles.annulerButtonText}>Annuler</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
               </View>
-</TouchableOpacity>
             );
           }}
         />
@@ -271,6 +368,12 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 6,
   },
+  entrepriseNom: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 6,
+    marginTop: -4,
+  },
   statutBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -330,6 +433,10 @@ const styles = StyleSheet.create({
   },
   payerButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
+  payerButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+
   payeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -340,4 +447,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   payeBadgeText: { color: '#16A34A', fontWeight: '700', fontSize: 14 },
+  annulerButton: {
+  backgroundColor: '#FEE2E2',
+  paddingVertical: 6,
+  paddingHorizontal: 12,
+  borderRadius: 6,
+  marginTop: 8,
+  alignSelf: 'flex-start',
+},
+annulerButtonText: {
+  color: '#DC2626',
+  fontWeight: 'bold',
+  fontSize: 13,
+},
 });

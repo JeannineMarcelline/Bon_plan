@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -20,17 +21,22 @@ export default function ProDashbordScreen({ navigation }) {
   const [stats, setStats] = useState({ vehicules: 0, reservations: 0, enAttente: 0 });
 
   const loadData = async () => {
-    try {
+  try {
     const { data: entrepriseData, error: entrepriseError } = await supabase
-  .from('entreprises')
-  .select('*')
-  .eq('utilisateur_id', user.id)
-  .maybeSingle();
+    .from('entreprises')
+    .select('*, categories(nom)')
+    .eq('utilisateur_id', user.id)
+    .maybeSingle();
 
 if (entrepriseError) throw entrepriseError;
 
 if (entrepriseData) {
   setEntreprise(entrepriseData);
+
+  const categorieNom = entrepriseData.categories?.nom;
+
+//==== Transport === 
+  if(categorieNom === 'Transport') {
 
   const { count: nbVehicules } = await supabase
     .from('vehicules')
@@ -63,6 +69,30 @@ if (entrepriseData) {
     reservations: nbReservations,
     enAttente: nbEnAttente,
   });
+ //==== produit=====
+}else{
+ 
+  const{ count : nbProduits} = await supabase
+  .from('produits')
+  .select('*', { count : 'exact' , head: true})
+  .eq('id_entreprise', entrepriseData.id);
+
+  const {count :  nbCommandes} = await supabase
+  .from('commandes')
+  .select('*', { count : 'exact', head: true})
+  .eq('id_entreprise', entrepriseData.id);
+
+  const {count : nbEnAttente} = await supabase
+  .from('commandes')
+  .select('*', { count :'exact',head: true})
+  .eq('statut', 'en_attente_retrait');
+
+  setStats({
+    produits: nbProduits || 0 ,
+    commandes: nbCommandes || 0,
+    enAttente: nbEnAttente || 0,
+  });
+}
 }
 } catch (error) {
       console.error('Erreur chargement dashboard:', error);
@@ -71,9 +101,51 @@ if (entrepriseData) {
     }
   };
 
+   const checkNewReservations = async () => {
+  try {
+    const { data: entreprises } = await supabase
+      .from('entreprises')
+      .select('id')
+      .eq('utilisateur_id', user.id);
+
+    if (!entreprises || entreprises.length === 0) return;
+
+    const idEntreprise = entreprises[0].id;
+
+    const { data: vehicules } = await supabase
+      .from('vehicules')
+      .select('id_vehicule')
+      .eq('id_entreprise', idEntreprise);
+
+    if (!vehicules || vehicules.length === 0) return;
+
+    const idsVehicules = vehicules.map(v => v.id_vehicule);
+
+    const { count } = await supabase
+      .from('reservation_transport')
+      .select('*', { count: 'exact', head: true })
+      .in('id_vehicule', idsVehicules)
+      .eq('statut', 'en_attente');
+
+    if (count > 0) {
+      Alert.alert(
+        'Nouvelles réservations',
+        `Vous avez ${count} nouvelle(s) réservation(s) en attente.`,
+        [
+          { text: 'Voir', onPress: () => navigation.navigate('ProReservation') },
+          { text: 'Plus tard', style: 'cancel' }
+        ]
+      );
+    }
+  } catch (error) {
+    console.error(' Erreur check notif:', error);
+  }
+};
+
   useFocusEffect(
     React.useCallback(() => {
       loadData();
+      checkNewReservations();
     }, [])
   );
 
@@ -141,8 +213,15 @@ if (entrepriseData) {
           </View>
         </View>
 
-        {/* Cartes statistiques */}
-        <View style={styles.statsGrid}>
+        
+
+        {/* Menu des actions */}
+        <View style={styles.menuSection}>
+          <Text style={styles.sectionTitle}>Gestion</Text>
+
+      {entreprise.categories?.nom == 'Transport' ? (
+         <>
+         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <View style={[styles.statIconWrap, { backgroundColor: '#EFF6FF' }]}>
               <Ionicons name="bus" size={16} color="#2563EB" />
@@ -162,12 +241,7 @@ if (entrepriseData) {
             </View>
           </View>
         </View>
-
-        {/* Menu des actions */}
-        <View style={styles.menuSection}>
-          <Text style={styles.sectionTitle}>Gestion</Text>
-
-          <TouchableOpacity
+           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => navigation.navigate('AddVehicle')}
           >
@@ -193,13 +267,66 @@ if (entrepriseData) {
             <Text style={styles.menuItemText}>Mes réservations</Text>
             {stats.enAttente > 0 && (
               <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{stats.enAttente}</Text>
+                <Text  style={styles.notifBadgeText}>{stats.enAttente}</Text>
               </View>
             )}
             <Ionicons name="chevron-forward" size={20} color="#ccc" />
           </TouchableOpacity>
+         </>
+         ) : ( 
+           <>
+            <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
+            <View style={[styles.statIconWrap, { backgroundColor: '#EFF6FF' }]}>
+              <Ionicons name="bus" size={16} color="#2563EB" />
+            </View>
+            <View>
+              <Text style={styles.statNumber}>{stats.produits}</Text>
+              <Text style={styles.statLabel}>Produits</Text>
+            </View>
+          </View>
+          <View style={styles.statCard}>
+            <View style={[styles.statIconWrap, { backgroundColor: '#ECFDF5' }]}>
+              <Ionicons name="calendar" size={16} color="#10B981" />
+            </View>
+            <View>
+              <Text style={styles.statNumber}>{stats.commandes}</Text>
+              <Text style={styles.statLabel}>Commandes</Text>
+            </View>
+          </View>
         </View>
+           <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('AddProduit')}>
+            <Ionicons name="add-circle-outline" size={24} color="#007BFF" />
+            <Text style={styles.menuItemText}>Ajouter un Produit</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+           </TouchableOpacity>
 
+           <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('MesProduits')}
+          >
+            <Ionicons name="list-outline" size={24} color="#28a745" />
+            <Text style={styles.menuItemText}>Mes Produits</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuItem, styles.lastMenuItem]}
+            onPress={() => navigation.navigate('MesCommandes')}
+          >
+            <Ionicons name="calendar-outline" size={24} color="#ffc107" />
+            <Text style={styles.menuItemText}>Mes commandes</Text>
+            {stats.enAttente > 0 && (
+              <View style={styles.notifBadge}>
+                <Text  style={styles.notifBadgeText}>{stats.enAttente}</Text>
+              </View>
+            )}
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+          </TouchableOpacity>
+           </>
+      )}
+
+        </View>
         {/* Version */}
         <Text style={styles.version}>Bon Plan Madagascar v1.0</Text>
       </ScrollView>

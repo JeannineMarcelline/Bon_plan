@@ -20,6 +20,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from "../context/AuthContext";
+import { useCart } from '../context/CartContext';
 
 export default function CompanyScreen() {
   const {user} = useAuth();
@@ -36,6 +37,33 @@ export default function CompanyScreen() {
   const [avisList, setAvisList] = useState([]);
   const [noteMoyenne, setNoteMoyenne] = useState(0);
   const [nbAvis, setNbAvis] = useState(0);
+  const [produits, setProduits] = useState([]);
+  const [loadingProduits, setLoadingProduits] = useState(true);
+
+  const {addToCart} = useCart();
+
+
+//charger les produits
+
+const loadProduits = async(entrepriseId) => {
+try{
+const { data, error } = await supabase
+.from('produits')
+.select('*')
+.eq('id_entreprise', entrepriseId)
+.gt('stock', 0)
+.order('created_at', {ascending: false});
+
+ if(error) throw error;
+ setProduits(data || []);
+
+}catch(error){
+console.error('Erreur de chargement de produits', error);
+}finally{
+  setLoadingProduits(false);
+}
+
+};
 
 
   // fonction pour l'avis
@@ -128,6 +156,7 @@ export default function CompanyScreen() {
         };
         setEntreprise(entreprisesFormatee);
         await loadAvis(entreprisesFormatee.id);
+        await loadProduits(entreprisesFormatee.id);
        }
       } catch (error) {
         console.error('Erreur chargement entreprise:', error);
@@ -375,13 +404,47 @@ export default function CompanyScreen() {
             </View>
           )}
 
-          {/* Section spécifique à l'HÔTEL (exemple pour plus tard) */}
-          {entreprise.categorie?.toLowerCase() === 'hôtel' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🛏️ Chambres disponibles</Text>
-              <Text style={styles.infoText}>Fonctionnalité à venir...</Text>
+         {/* === SECTION PRODUITS === */}
+<View style={styles.section}>
+  <View style={styles.produitsHeader}>
+    <Text style={styles.sectionTitle}>🛍️ Nos produits</Text>
+    {produits.length > 3 && (
+      <TouchableOpacity onPress={() => navigation.navigate('ProduitsEntreprise', { id: entreprise.id })}>
+        <Text style={styles.seeAll}>Voir tout</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+
+  {loadingProduits ? (
+    <ActivityIndicator size="small" color="#1E3A5F" />
+  ) : produits.length === 0 ? (
+    <Text style={styles.noProduits}>Aucun produit disponible</Text>
+  ) : (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.produitsScroll}>
+      {produits.slice(0, 4).map((produits) => (
+        <View key={produits.id} style={styles.produitCard}>
+          {produits.photos_produit && produits.photos_produit.length > 0 ? (
+            <Image source={{ uri: produits.photos_produit[0] }} style={styles.produitImage} />
+          ) : (
+            <View style={[styles.produitImage, styles.produitImagePlaceholder]}>
+              <Ionicons name="image-outline" size={30} color="#ccc" />
             </View>
           )}
+          <Text style={styles.produitNom} numberOfLines={1}>{produits.nom_produit}</Text>
+          <Text style={styles.produitPrix}>{produits.prix_produit} Ar</Text>
+          <TouchableOpacity
+            style={styles.addToCartButton}
+            onPress={() => {
+               addToCart(produits);
+            Alert.alert('🛒 Ajouté', `${produits.nom_produit} a été ajouté au panier`);
+            }} >
+            <Text style={styles.addToCartButtonText}>+ Panier</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+    </ScrollView>
+  )}
+</View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -606,4 +669,75 @@ noAvis: {
   paddingVertical: 20,
 },
 
+// style produit
+
+produitsHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+},
+seeAll: {
+  fontSize: 14,
+  color: '#1E3A5F',
+  fontWeight: '600',
+},
+produitsScroll: {
+  flexDirection: 'row',
+  marginTop: 8,
+  paddingBottom: 4,
+},
+produitCard: {
+  backgroundColor: '#fff',
+  borderRadius: 12,
+  padding: 12,
+  marginRight: 12,
+  width: 140,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.05,
+  shadowRadius: 4,
+  elevation: 2,
+  alignItems: 'center',
+},
+produitImage: {
+  width: 100,
+  height: 100,
+  borderRadius: 8,
+  backgroundColor: '#f0f0f0',
+},
+produitImagePlaceholder: {
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+produitNom: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#1A1A2E',
+  marginTop: 8,
+  textAlign: 'center',
+},
+produitPrix: {
+  fontSize: 14,
+  fontWeight: 'bold',
+  color: '#1E3A5F',
+  marginTop: 4,
+},
+addToCartButton: {
+  backgroundColor: '#1E3A5F',
+  paddingHorizontal: 16,
+  paddingVertical: 6,
+  borderRadius: 20,
+  marginTop: 8,
+},
+addToCartButtonText: {
+  color: '#fff',
+  fontSize: 12,
+  fontWeight: 'bold',
+},
+noProduits: {
+  color: '#6C757D',
+  fontSize: 14,
+  fontStyle: 'italic',
+  paddingVertical: 8,
+},
 });

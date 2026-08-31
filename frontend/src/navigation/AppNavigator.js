@@ -1,17 +1,20 @@
-import React from 'react';
+
 import { NavigationContainer } from '@react-navigation/native';
+import { View, Text, StyleSheet } from 'react-native';
 
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import { useCart } from '../context/CartContext';
+
+
 
 import HomeScreen from '../screens/HomeScreen';
 import CompanyScreen from '../screens/CompanyScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
-import FavoritesScreen from '../screens/FavoritesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import AddCompanyScreen from '../screens/AddCompanyScreen';
 import AdminScreen from '../screens/AdminScreen';
@@ -28,8 +31,12 @@ import MesVehiculesScreen from '../screens/MesVehiculesScreen';
 import ProReservation from '../screens/ProReservation';
 import EditVehicule from '../screens/EditVehicule';
 import TicketScreen from '../screens/TicketScreen';
-
-
+import AddProduit from '../screens/Produits/AddProduit';
+import CompanyProduits from '../screens/Produits/CompanyProduits';
+import CartScreen from '../screens/Produits/CartScreen';
+import OrderScreen from '../screens/Produits/Client/OrderScreen';
+import ClientOrderScreen from '../screens/Produits/Client/ClientOrderScreen';
+import ClientOrderDetail from '../screens/Produits/Client/ClientOrderDetail';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -50,8 +57,11 @@ function HomeStack() {
      <Stack.Screen name="ProReservation" component={ProReservation} />
      <Stack.Screen name="EditVehicule" component={EditVehicule} />
      <Stack.Screen name="TicketScreen" component={TicketScreen}/>
-
-
+     <Stack.Screen name="AddProduit" component={AddProduit} />
+     <Stack.Screen name="CompanyProduits" component={CompanyProduits} />
+     <Stack.Screen name='Order' component={OrderScreen}/>
+     <Stack.Screen name='ClientOrders' component={ClientOrderScreen}/>
+    <Stack.Screen name="ClientOrderDetail" component={ClientOrderDetail} />
     </Stack.Navigator>
   );
 }
@@ -83,6 +93,8 @@ function ReservationsStack() {
 // Tabs pour l'application principale
 function MainTabs() {
   const { user } = useAuth();
+  const { getItemCount } = useCart();
+  const itemCount = getItemCount();
 
   return (
      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -119,8 +131,24 @@ function MainTabs() {
     >
       <Tab.Screen name="Accueil" component={HomeStack} />
       <Tab.Screen name="Réservations" component={ReservationsStack} />
-      <Tab.Screen name="Favoris" component={FavoritesScreen} />
       <Tab.Screen name="Profil" component={ProfileScreen} />
+         <Tab.Screen
+               name="Panier"
+               component={CartScreen}
+               options={{
+                 tabBarIcon: ({ focused, color, size }) => (
+                   <View>
+                     <Ionicons name={focused ? 'cart' : 'cart-outline'} size={size} color={color} />
+                     {itemCount > 0 && (
+                       <View style={styles.badge}>
+                         <Text style={styles.badgeText}>{itemCount}</Text>
+                       </View>
+                     )}
+                   </View>
+                 ),
+               }}
+             />
+
       {user?.role === 'admin' && (
         <Tab.Screen 
         name= 'admin'
@@ -163,3 +191,23 @@ export default function AppNavigator() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+});

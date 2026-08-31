@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { initDatabase } from './src/database/database';
+import { CartProvider } from './src/context/CartContext';
 
 // Empêcher le splash screen de se cacher automatiquement
 SplashScreen.preventAutoHideAsync();
@@ -24,8 +25,10 @@ export default function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <AppNavigator />
+     <AuthProvider>
+      <CartProvider>
+        <AppNavigator />
+      </CartProvider>
     </AuthProvider>
   );
 }

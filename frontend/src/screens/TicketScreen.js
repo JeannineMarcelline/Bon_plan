@@ -10,7 +10,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import QRCode from 'react-native-qrcode-svg';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
 
 export default function TicketScreen () {
@@ -37,7 +38,7 @@ const {data, error} = await supabase
     prix_total,
     paye,
     utilisateurs ( nom ),
-    vehicules ( nom, ville_depart, ville_arrivee, date_depart, heure_depart ),
+    vehicules ( nom, ville_depart, ville_arrivee, date_depart, heure_depart, entreprises ( nom ) ),
     reservation_places ( places (numero_place) )
     `)
 .eq('id_reservation', idReservation)
@@ -55,6 +56,7 @@ setReservation({
 ...data, 
 client_nom: data.utilisateurs?.nom,
 vehicule_nom: data.vehicules?.nom,
+entreprise_nom: data.vehicules?.entreprises?.nom,
 ville_depart: data.vehicules?.ville_depart,
 ville_arrivee: data.vehicules?.ville_arrivee,
 date_depart: data.vehicules?.date_depart,
@@ -89,6 +91,165 @@ if(!reservation) {
     )
 }
 
+const handleDownloadPdf = async () => {
+  try {
+    // Le HTML est une simple page web qu'expo-print transforme en PDF.
+    // Structuré comme un vrai reçu : en-tête, carte, lignes label/valeur, total mis en avant.
+    const html = `
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: Helvetica, Arial, sans-serif;
+              color: #1A1A2E;
+              padding: 32px;
+              background-color: #F9FAFB;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 24px;
+            }
+            .header h1 {
+              font-size: 22px;
+              margin: 0;
+              color: #1E3A5F;
+            }
+            .header p {
+              font-size: 12px;
+              color: #6B7280;
+              margin: 4px 0 0 0;
+              letter-spacing: 1px;
+              text-transform: uppercase;
+            }
+            .ticket {
+              background: #ffffff;
+              border: 1px solid #E5E7EB;
+              border-radius: 16px;
+              padding: 24px;
+              max-width: 480px;
+              margin: 0 auto;
+            }
+            .entreprise {
+              font-size: 18px;
+              font-weight: bold;
+              color: #111827;
+              margin-bottom: 2px;
+            }
+            .sous-titre {
+              font-size: 12px;
+              color: #9CA3AF;
+              margin-bottom: 16px;
+            }
+            .badge-paye {
+              display: inline-block;
+              background: #DCFCE7;
+              color: #16A34A;
+              font-weight: bold;
+              font-size: 12px;
+              padding: 6px 14px;
+              border-radius: 20px;
+              margin-bottom: 20px;
+            }
+            .divider {
+              border: none;
+              border-top: 1px solid #F3F4F6;
+              margin: 16px 0;
+            }
+            .row {
+              display: flex;
+              justify-content: space-between;
+              padding: 8px 0;
+              font-size: 14px;
+            }
+            .row .label {
+              color: #6B7280;
+            }
+            .row .value {
+              color: #111827;
+              font-weight: 600;
+              text-align: right;
+            }
+            .total-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-top: 16px;
+            }
+            .total-label {
+              font-size: 13px;
+              color: #6B7280;
+            }
+            .total-value {
+              font-size: 24px;
+              font-weight: bold;
+              color: #1E3A5F;
+            }
+            .footer {
+              text-align: center;
+              font-size: 11px;
+              color: #9CA3AF;
+              margin-top: 20px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Bon Plan Madagascar</h1>
+            <p>Reçu de réservation</p>
+          </div>
+
+          <div class="ticket">
+            <div class="entreprise">${reservation.entreprise_nom || ''}</div>
+            <div class="sous-titre">${reservation.vehicule_nom || ''}</div>
+
+            <span class="badge-paye">✓ Payé</span>
+
+            <hr class="divider" />
+
+            <div class="row">
+              <span class="label">Client</span>
+              <span class="value">${reservation.client_nom || ''}</span>
+            </div>
+            <div class="row">
+              <span class="label">Trajet</span>
+              <span class="value">${reservation.ville_depart} → ${reservation.ville_arrivee}</span>
+            </div>
+            <div class="row">
+              <span class="label">Départ</span>
+              <span class="value">${reservation.date_depart} à ${reservation.heure_depart}</span>
+            </div>
+            <div class="row">
+              <span class="label">Place(s)</span>
+              <span class="value">n° ${reservation.places}</span>
+            </div>
+
+            <hr class="divider" />
+
+            <div class="total-row">
+              <span class="total-label">Total payé</span>
+              <span class="total-value">${reservation.prix_total} Ar</span>
+            </div>
+          </div>
+
+          <p class="footer">Billet n° ${reservation.id_reservation}</p>
+        </body>
+      </html>
+    `;
+
+    // printToFileAsync génère le fichier PDF et renvoie son chemin local (uri)
+    const { uri } = await Print.printToFileAsync({ html });
+
+    // isAvailableAsync vérifie que le partage est possible sur cet appareil
+    // (toujours vrai sur téléphone, mais prudent de vérifier)
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
+    }
+  } catch (error) {
+    console.error('Erreur génération PDF:', error);
+  }
+};
+
 return(
     <SafeAreaView style={styles.container}>
          <View style={styles.header}>
@@ -103,17 +264,6 @@ return(
         <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
         <Text style={styles.payeBadgeText}>Payé</Text>
         </View>  
-     <View style={styles.qrContainer}>
-            <QRCode
-              value={String(reservation.id_reservation)}
-              size={180}
-              backgroundColor="#fff"
-              color="#1A1A2E"
-            />
-     </View>
-     <Text style={styles.qrHint}>
-            Présentez ce code au chauffeur avant l'embarquement
-     </Text>
        <View style={styles.divider} />
 
           {/* Détails du trajet, pour un contrôle visuel simple par le
@@ -121,6 +271,10 @@ return(
           <View style={styles.infoRow}>
             <Ionicons name="person-outline" size={18} color="#6B7280" />
             <Text style={styles.infoText}>{reservation.client_nom}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Ionicons name="business-outline" size={18} color="#6B7280" />
+            <Text style={styles.infoText}>{reservation.entreprise_nom}</Text>
           </View>
           <View style={styles.infoRow}>
             <Ionicons name="bus-outline" size={18} color="#6B7280" />
@@ -154,6 +308,11 @@ return(
         <Text style={styles.footerNote}>
           Numéro de billet : #{reservation.id_reservation}
         </Text>
+
+        <TouchableOpacity style={styles.pdfButton} onPress={handleDownloadPdf} activeOpacity={0.85}>
+          <Ionicons name="download-outline" size={18} color="#1E3A5F" />
+          <Text style={styles.pdfButtonText}>Télécharger le reçu (PDF)</Text>
+        </TouchableOpacity>
     </ScrollView>
     </SafeAreaView>
 );
@@ -201,20 +360,6 @@ const styles = StyleSheet.create({
   },
   payeBadgeText: { color: '#16A34A', fontWeight: '700', fontSize: 13 },
 
-  qrContainer: {
-    padding: 16,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  qrHint: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-
   divider: {
     height: 1,
     backgroundColor: '#F3F4F6',
@@ -243,5 +388,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9CA3AF',
     marginTop: 16,
+  },
+
+  pdfButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginTop: 20,
+    width: '100%',
+  },
+  pdfButtonText: {
+    color: '#1E3A5F',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });

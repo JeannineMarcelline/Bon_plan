@@ -177,7 +177,7 @@ for (let i = 0; i < limited.length; i++) {
    const coords = await geocodeAddress(adresse);
    const latitude = coords?.latitude || null;
    const longitude = coords?.longitude || null;
-   console.log('📍 Coordonnées trouvées :', latitude, longitude);
+   console.log('Coordonnées trouvées :', latitude, longitude);
 
     try{
       
