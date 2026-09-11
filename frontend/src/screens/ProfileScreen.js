@@ -1,3 +1,4 @@
+// screens/ProfileScreen.js
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -20,20 +21,21 @@ export default function ProfileScreen() {
   const [entreprise, setEntreprise] = useState(null);
   const [loadingEntreprise, setLoadingEntreprise] = useState(true);
 
-  // === TOUTE LA LOGIQUE RESTE IDENTIQUE ===
+
+
   const loadEntreprise = async () => {
     if (user?.role !== 'pro') {
       setLoadingEntreprise(false);
       return;
     }
     try {
-     const { data, error } = await supabase
-     .from ('entreprises')
-     .select('*')
-     .eq('utilisateur_id', user.id)
-     .maybeSingle();
+      const { data, error } = await supabase
+        .from('entreprises')
+        .select('*')
+        .eq('utilisateur_id', user.id)
+        .maybeSingle();
 
-     if(error) throw error;
+      if (error) throw error;
       if (data) {
         setEntreprise(data);
       }
@@ -47,8 +49,10 @@ export default function ProfileScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadEntreprise();
+     
     }, [])
   );
+
 
   const handleLogout = () => {
     Alert.alert(
@@ -61,6 +65,7 @@ export default function ProfileScreen() {
     );
   };
 
+
   const getRoleLabel = (role) => {
     if (role === 'pro') return 'Professionnel';
     if (role === 'admin') return 'Administrateur';
@@ -70,14 +75,14 @@ export default function ProfileScreen() {
   const getStatutLabel = (statut) => {
     if (statut === 'valide') return ' Validée';
     if (statut === 'refuse') return ' Refusée';
-    return '⏳ En attente';
+    return ' En attente';
   };
+
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        
-        {/* ===== EN-TÊTE ===== */}
+ 
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
@@ -90,7 +95,6 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ===== CARTE DES INFOS ===== */}
         <View style={styles.card}>
           <View style={styles.infoItem}>
             <Ionicons name="person-outline" size={20} color="#1E3A5F" />
@@ -115,10 +119,38 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ===== SECTION ENTREPRISE (PRO) ===== */}
+        
+        <View style={styles.quickActions}>
+          <TouchableOpacity
+            style={styles.quickButton}
+            onPress={() => navigation.navigate('Accueil', { screen: 'ClientOrders' })}
+          >
+            <Ionicons name="cube-outline" size={22} color="#2563EB" />
+            <Text style={styles.quickButtonText}>Commandes</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickButton}
+            onPress={() => navigation.navigate('Accueil', { screen: 'MesReservations' })}
+          >
+            <Ionicons name="bus-outline" size={22} color="#7C3AED" />
+            <Text style={styles.quickButtonText}>Réservations</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickButton}
+            onPress={() => navigation.navigate('Favoris')}
+          >
+            <Ionicons name="heart-outline" size={22} color="#DC2626" />
+            <Text style={styles.quickButtonText}>Favoris</Text>
+          </TouchableOpacity>
+        </View>
+
+       
+
         {user?.role === 'pro' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}> Mon entreprise</Text>
+            <Text style={styles.cardTitle}>🏢 Mon entreprise</Text>
             {loadingEntreprise ? (
               <Text style={styles.loadingText}>Chargement...</Text>
             ) : entreprise ? (
@@ -128,21 +160,23 @@ export default function ProfileScreen() {
                   Statut : {getStatutLabel(entreprise.statutvalidation)}
                 </Text>
                 {entreprise.statutvalidation === 'valide' && (
-                  <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={() => navigation.navigate('Accueil', { screen: 'ProDashbord' })}
-                  >
-                    <Text style={styles.primaryButtonText}>Dashboard Pro</Text>
-                  </TouchableOpacity>
+                  <>
+                    <TouchableOpacity
+                      style={styles.primaryButton}
+                      onPress={() => navigation.navigate('Accueil', { screen: 'ProDashbord' })}
+                    >
+                      <Text style={styles.primaryButtonText}> Dashboard Pro</Text>
+                    </TouchableOpacity>
+                  </>
                 )}
                 {entreprise.statutvalidation === 'en_attente' && (
                   <View style={styles.pendingBox}>
-                    <Text style={styles.pendingText}>⏳ En attente de validation</Text>
+                    <Text style={styles.pendingText}> En attente de validation</Text>
                   </View>
                 )}
                 {entreprise.statutvalidation === 'refuse' && (
                   <View style={styles.refusedBox}>
-                    <Text style={styles.refusedText}>❌ Refusée</Text>
+                    <Text style={styles.refusedText}> Refusée</Text>
                   </View>
                 )}
               </>
@@ -157,42 +191,22 @@ export default function ProfileScreen() {
           </View>
         )}
 
-       <View style={styles.quickActions}>
-  
-  {/* Bouton Mes commandes - navigation vers HomeStack */}
-  <TouchableOpacity
-    style={styles.quickButton}
-    onPress={() => navigation.navigate('Accueil', { screen: 'ClientOrders' })}
-  >
-    <Ionicons name="cube-outline" size={22} color="#2563EB" />
-    <Text style={styles.quickButtonText}>Commandes</Text>
-  </TouchableOpacity>
+        
+        {user?.role === 'admin' && (
+          <TouchableOpacity
+            style={styles.adminButton}
+            onPress={() => navigation.navigate('AdminDashbord')}
+          >
+            <Ionicons name="shield-outline" size={22} color="#fff" />
+            <Text style={styles.adminButtonText}>🛡️ Administration</Text>
+          </TouchableOpacity>
+        )}
 
-  {/* Bouton Mes réservations - navigation vers HomeStack */}
-  <TouchableOpacity
-    style={styles.quickButton}
-    onPress={() => navigation.navigate('Accueil', { screen: 'MesReservations' })}
-  >
-    <Ionicons name="bus-outline" size={22} color="#7C3AED" />
-    <Text style={styles.quickButtonText}>Réservations</Text>
-  </TouchableOpacity>
-
-  {/* Bouton Favoris - directement accessible (si dans Tab) */}
-  <TouchableOpacity
-    style={styles.quickButton}
-    onPress={() => navigation.navigate('Favoris')}
-  >
-    <Ionicons name="heart-outline" size={22} color="#DC2626" />
-    <Text style={styles.quickButtonText}>Favoris</Text>
-  </TouchableOpacity>
-
-</View>
-
- {/* ===== DÉCONNEXION ===== */}
+       
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={20} color="#DC3545" />
           <Text style={styles.logoutButtonText}>Se déconnecter</Text>
         </TouchableOpacity>
-
 
         <Text style={styles.version}>Bon Plan Madagascar v1.0</Text>
       </ScrollView>
@@ -200,7 +214,8 @@ export default function ProfileScreen() {
   );
 }
 
-// ===== STYLES MODERNES =====
+
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -210,6 +225,8 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
+
+
   header: {
     alignItems: 'center',
     marginBottom: 24,
@@ -246,6 +263,7 @@ const styles = StyleSheet.create({
     color: '#6C757D',
     marginTop: 2,
   },
+
   card: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -280,6 +298,96 @@ const styles = StyleSheet.create({
     color: '#1A1A2E',
     fontWeight: '500',
   },
+
+  quickActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 8,
+  },
+  quickButton: {
+    flex: 1,
+    minWidth: '30%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
+    gap: 4,
+  },
+  quickButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#374151',
+    textAlign: 'center',
+  },
+
+  
+  notifButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  notifIconContainer: {
+    position: 'relative',
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#DBEAFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  notifBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  notifContent: {
+    flex: 1,
+  },
+  notifTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  notifSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 1,
+  },
+
+  
   entrepriseNom: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -305,9 +413,6 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     backgroundColor: '#E9ECEF',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
     marginTop: 8,
   },
   secondaryButtonText: {
@@ -335,82 +440,54 @@ const styles = StyleSheet.create({
     color: '#721C24',
     fontSize: 14,
   },
-  menuCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  menuCardText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1A1A2E',
-    marginLeft: 12,
-  },
-  logoutButton: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E9ECEF',
-    marginTop: 8,
-  },
-  logoutButtonText: {
-    color: '#DC3545',
-    fontSize: 16,
-    fontWeight: '500',
-  },
   loadingText: {
     color: '#6C757D',
     fontSize: 14,
     textAlign: 'center',
     paddingVertical: 10,
   },
+
+
+  adminButton: {
+    flexDirection: 'row',
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  adminButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    marginTop: 8,
+    gap: 8,
+  },
+  logoutButtonText: {
+    color: '#DC3545',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+
+
   version: {
     textAlign: 'center',
     marginTop: 20,
     fontSize: 12,
     color: '#ADB5BD',
   },
-
-  // temporaire 
-
-  quickActions: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  justifyContent: 'space-between',
-  marginBottom: 16,
-  gap: 8,
-},
-quickButton: {
-  flex: 1,
-  minWidth: '30%',
-  backgroundColor: '#fff',
-  borderRadius: 12,
-  paddingVertical: 14,
-  paddingHorizontal: 10,
-  alignItems: 'center',
-  borderWidth: 1,
-  borderColor: '#F3F4F6',
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.03,
-  shadowRadius: 2,
-  elevation: 1,
-  gap: 4,
-},
-quickButtonText: {
-  fontSize: 12,
-  fontWeight: '500',
-  color: '#374151',
-  textAlign: 'center',
-},
 });

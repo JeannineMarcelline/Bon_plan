@@ -142,7 +142,7 @@ const totalItems = item.ligne_commande?.reduce(
   </View>
   <View style={styles.cardBody}>
      <Text style={styles.entrepriseName}>
-            {item.entreprise?.nom || 'Entreprise inconnue'}
+            {item.entreprises?.nom || 'Entreprise inconnue'}
      </Text>
     <View style={styles.cardDetails}>
        <Text style={styles.totalItems}>
@@ -175,7 +175,7 @@ if(commandes.length === 0) {
     return(
         <SafeAreaView style={styles.emptyContainer}>
            <Ionicons name="receipt-outline" size={60} color="#D1D5DB" />
-        <Text style={styles.emptyTitle}>📦 Aucune commande</Text>
+        <Text style={styles.emptyTitle}> Aucune commande</Text>
         <Text style={styles.emptySub}>
           Vous n'avez pas encore passé de commande.
         </Text>
@@ -202,7 +202,7 @@ return(
       </View>
  <FlatList
         data={commandes}
-        keyExtractor={(item) => item.id_commande.toString()}
+       keyExtractor={(item) => item.id_commande?.toString() || Math.random().toString()}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}

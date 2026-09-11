@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { supabase } from '../../lib/supabase';
+import { getConfigCategorie } from '../../Config/categorieConfig';
 
 export default function CartScreen() {
   const navigation = useNavigation();
@@ -22,6 +24,38 @@ const {cart, removeFromCart, updateQuantity, getTotal,  getItemCount, clearCart,
 const total = getTotal();
 const itemCount = getItemCount();
 
+const [categorieEntreprise, setCategorieEntreprise] = useState(null);
+
+// Toute la logique "cette catégorie a besoin de quoi" vient d'un seul
+// endroit centralisé (Config/categorieConfig.js), pas codée ici en dur.
+const config = getConfigCategorie(categorieEntreprise);
+const mots = config.vocabulaire;
+
+// Charge la catégorie de l'entreprise pour savoir quelle config appliquer
+useEffect(() => {
+  const chargerCategorie = async () => {
+    if (!idEntreprise) {
+      setCategorieEntreprise(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('entreprises')
+      .select('categories (nom)')
+      .eq('id', idEntreprise)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erreur chargement catégorie:', error);
+      return;
+    }
+
+    setCategorieEntreprise(data?.categories?.nom || null);
+  };
+
+  chargerCategorie();
+}, [idEntreprise]);
+
 const handleCheckout = () => {
     if(!user) {
      Alert.alert('Connexion requise', 'Veuillez vous connecter pour passer commande');
@@ -30,7 +64,7 @@ const handleCheckout = () => {
 }
 
 if(cart.length === 0) {
-    Alert.alert('Panier vide', 'Ajouter des produits avant de passer commande');
+    Alert.alert(`${mots.panier.charAt(0).toUpperCase() + mots.panier.slice(1)} vide`, `Ajouter des ${mots.produitPluriel} avant de continuer`);
     return;
 }
 
@@ -76,7 +110,7 @@ const renderItem = ({ item }) => (
         onPress={() => {
           Alert.alert(
             'Confirmation',
-            `Retirer "${item.nom_produit}" du panier ?`,
+            `Retirer "${item.nom_produit}" de votre ${mots.panier} ?`,
             [
               { text: 'Annuler', style: 'cancel' },
               { text: 'Retirer', style: 'destructive', onPress: () => removeFromCart(item.id) }
@@ -93,13 +127,13 @@ const renderItem = ({ item }) => (
     return (
       <SafeAreaView style={styles.emptyContainer}>
         <Ionicons name="cart-outline" size={60} color="#D1D5DB" />
-        <Text style={styles.emptyTitle}>Votre panier est vide</Text>
-        <Text style={styles.emptySub}>Découvrez nos produits et ajoutez-les à votre panier.</Text>
+        <Text style={styles.emptyTitle}>Votre {mots.panier} est vide</Text>
+        <Text style={styles.emptySub}>Découvrez nos {mots.produitPluriel} et ajoutez-les à votre {mots.panier}.</Text>
         <TouchableOpacity
           style={styles.browseButton}
           onPress={() => navigation.navigate('Accueil')}
         >
-             <Text style={styles.browseButtonText}>Parcourir les produits</Text>
+             <Text style={styles.browseButtonText}>Parcourir les {mots.produitPluriel}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -108,7 +142,7 @@ const renderItem = ({ item }) => (
    return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>🛒 Mon panier</Text>
+        <Text style={styles.title}>🛒 {mots.panier === 'panier' ? 'Mon' : 'Ma'} {mots.panier}</Text>
         <TouchableOpacity onPress={clearCart}>
           <Text style={styles.clearText}>Tout supprimer</Text>
         </TouchableOpacity>
@@ -133,7 +167,7 @@ const renderItem = ({ item }) => (
                   disabled={cart.length === 0}
                 >
                   <Text style={styles.checkoutButtonText}>
-                    Commander ({itemCount} article{itemCount > 1 ? 's' : ''})
+                    {mots.verbeCommande} ({itemCount} {itemCount > 1 ? mots.produitPluriel : mots.produit})
                   </Text>
                   <Ionicons name="arrow-forward" size={20} color="#fff" />
                 </TouchableOpacity>

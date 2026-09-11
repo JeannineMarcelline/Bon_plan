@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from "../context/AuthContext";
 import { useCart } from '../context/CartContext';
+import { getConfigCategorie } from '../Config/categorieConfig';
 
 export default function CompanyScreen() {
   const {user} = useAuth();
@@ -42,15 +43,23 @@ export default function CompanyScreen() {
 
   const {addToCart} = useCart();
 
+  // Vocabulaire adapté à la catégorie de cette entreprise (calculé une fois
+  // l'entreprise chargée, sinon on garde le vocabulaire générique par défaut)
+  const config = getConfigCategorie(entreprise?.categorie || null);
+  const mots = config.vocabulaire;
+  const besoinDuree = config.besoinDuree;
+
 
 //charger les produits
 
 const loadProduits = async(entrepriseId) => {
+  
 try{
 const { data, error } = await supabase
 .from('produits')
 .select('*')
 .eq('id_entreprise', entrepriseId)
+.eq('actif', true)
 .gt('stock', 0)
 .order('created_at', {ascending: false});
 
@@ -404,10 +413,12 @@ console.error('Erreur de chargement de produits', error);
             </View>
           )}
 
-         {/* === SECTION PRODUITS === */}
+         {/* === SECTION PRODUITS / CHAMBRES / POSTES... === */}
 <View style={styles.section}>
   <View style={styles.produitsHeader}>
-    <Text style={styles.sectionTitle}>🛍️ Nos produits</Text>
+    <Text style={styles.sectionTitle}>
+      🛍️ Nos {mots.produitPluriel}
+    </Text>
     {produits.length > 3 && (
       <TouchableOpacity onPress={() => navigation.navigate('ProduitsEntreprise', { id: entreprise.id })}>
         <Text style={styles.seeAll}>Voir tout</Text>
@@ -418,27 +429,31 @@ console.error('Erreur de chargement de produits', error);
   {loadingProduits ? (
     <ActivityIndicator size="small" color="#1E3A5F" />
   ) : produits.length === 0 ? (
-    <Text style={styles.noProduits}>Aucun produit disponible</Text>
+    <Text style={styles.noProduits}>
+      Aucun{mots.produit === 'produit' ? '' : 'e'} {mots.produit} disponible
+    </Text>
   ) : (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.produitsScroll}>
-      {produits.slice(0, 4).map((produits) => (
-        <View key={produits.id} style={styles.produitCard}>
-          {produits.photos_produit && produits.photos_produit.length > 0 ? (
-            <Image source={{ uri: produits.photos_produit[0] }} style={styles.produitImage} />
+      {produits.slice(0, 4).map((produit) => (
+        <View key={produit.id} style={styles.produitCard}>
+          {produit.photos_produit && produit.photos_produit.length > 0 ? (
+            <Image source={{ uri: produit.photos_produit[0] }} style={styles.produitImage} />
           ) : (
             <View style={[styles.produitImage, styles.produitImagePlaceholder]}>
               <Ionicons name="image-outline" size={30} color="#ccc" />
             </View>
           )}
-          <Text style={styles.produitNom} numberOfLines={1}>{produits.nom_produit}</Text>
-          <Text style={styles.produitPrix}>{produits.prix_produit} Ar</Text>
+          <Text style={styles.produitNom} numberOfLines={1}>{produit.nom_produit}</Text>
+          <Text style={styles.produitPrix}>{produit.prix_produit} Ar</Text>
           <TouchableOpacity
             style={styles.addToCartButton}
             onPress={() => {
-               addToCart(produits);
-            Alert.alert('🛒 Ajouté', `${produits.nom_produit} a été ajouté au panier`);
+               addToCart(produit);
+            Alert.alert('🛒 Ajouté', `${produit.nom_produit} a été ajouté à votre ${mots.panier}`);
             }} >
-            <Text style={styles.addToCartButtonText}>+ Panier</Text>
+            <Text style={styles.addToCartButtonText}>
+              {besoinDuree ? '+ Réserver' : '+ Panier'}
+            </Text>
           </TouchableOpacity>
         </View>
       ))}
@@ -601,12 +616,6 @@ map: {
 },
 // style de Avis 
 
-starsContainer: {
-  flexDirection: 'row',
-  justifyContent: 'center',
-  gap: 8,
-  marginVertical: 12,
-},
 commentInput: {
   borderWidth: 1,
   borderColor: '#ddd',

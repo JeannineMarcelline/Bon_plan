@@ -1,4 +1,4 @@
-import React, {useState, useEffect, use} from "react";
+import React, {useState, useEffect, useRef} from "react";
 import {
     Text, 
     ScrollView, 
@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../context/AuthContext';
 import { useCart } from '../../../context/CartContext'
 import { supabase } from "../../../lib/supabase";
+import { getConfigCategorie } from '../../../Config/categorieConfig';
 
 export default function OrderScreen({ navigation, route }) {
 
@@ -25,6 +26,17 @@ const [adresse, setAdresse] = useState('');
 const [telephone, setTelephone] = useState('');
 const [notes, setNotes] = useState('');
 const [loading, setLoading] = useState(false);
+const isSubmitting = useRef(false);
+const [categorieEntreprise, setCategorieEntreprise] = useState(null);
+const [dateDebut, setDateDebut] = useState('');
+const [dateFin, setDateFin] = useState('');
+
+// Toute la logique "cette catégorie a besoin de quoi" vient d'un seul
+// endroit centralisé (config/categorieConfig.js), pas codée ici en dur.
+const config = getConfigCategorie(categorieEntreprise);
+const besoinDuree = config.besoinDuree;
+const besoinAdresse = config.besoinAdresse;
+const mots = config.vocabulaire;
 
 const generateReference = async() => {
 
@@ -43,25 +55,61 @@ return data;
 
 };
 
+// Charge la catégorie de l'entreprise pour savoir quelle config appliquer
+useEffect(() => {
+  const chargerCategorie = async () => {
+    if (!idEntreprise) return;
+
+    const { data, error } = await supabase
+      .from('entreprises')
+      .select('categories (nom)')
+      .eq('id', idEntreprise)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erreur chargement catégorie:', error);
+      return;
+    }
+
+    setCategorieEntreprise(data?.categories?.nom || null);
+  };
+
+  chargerCategorie();
+}, [idEntreprise]);
 
 const handleSubmit = async () => {
-    if(!adresse.trim()) {
-    Alert.alert('Erreur', 'Vous devez saisir votre adresse de Livraison');
+   if (isSubmitting.current) return; 
+    isSubmitting.current = true;
+
+    if(besoinAdresse && !adresse.trim()) {
+    Alert.alert('Erreur', `Vous devez saisir votre adresse de ${mots.livraison}`);
+    isSubmitting.current = false;
     return;
     }
+
     if(!telephone.trim()){
         Alert.alert('Erreur', 'Veuillez saisir votre telephone');
+        isSubmitting.current = false;
         return;
     }
 
-    if(!cart.lenght === 0) {
-        Alert.alert('Erreur', 'Votre panier est vide');
-        return;
-    }
+   if (cart.length === 0) {
+    Alert.alert('Erreur', `Votre ${mots.panier} est vide`);
+    isSubmitting.current = false;
+    return;
+}
     if(!idEntreprise){
         Alert.alert('Erreur', 'Aucune entreprise selectionner');
+        isSubmitting.current = false;
         return;
     }
+
+    if (besoinDuree && (!dateDebut.trim() || !dateFin.trim())) {
+      Alert.alert('Erreur', 'Veuillez indiquer les dates de début et de fin');
+      isSubmitting.current = false;
+      return;
+    }
+
     setLoading(true);
 
     try{
@@ -81,6 +129,8 @@ for (const item of cart) {
 
   if (stockError || !produit) {
     Alert.alert('Erreur', 'Produit introuvable');
+    setLoading(false);
+    isSubmitting.current = false;
     return;
   }
 
@@ -89,6 +139,8 @@ for (const item of cart) {
       'Stock insuffisant',
       `"${item.nom_produit}" n'a plus que ${produit.stock} unité(s) disponible(s)`
     );
+    setLoading(false);
+    isSubmitting.current = false;
     return;
   }
 }
@@ -102,11 +154,13 @@ const { data: commande, error: commandeError } = await supabase
     reference: reference,
     statut: 'en_attente',
     prix_total: totalCommande,
-    adresse_livraison: adresse.trim(),
+    adresse_livraison: besoinAdresse ? adresse.trim() : null,
     telephone_livraison: telephone.trim(),
     notes: notes.trim(),
     mode_paiement: 'cash',
     date_commande: new Date().toISOString(),
+    date_debut: besoinDuree ? new Date(dateDebut).toISOString() : null,
+    date_fin: besoinDuree ? new Date(dateFin).toISOString() : null,
 })
 .select()
 .single();
@@ -127,19 +181,7 @@ const { error: ligneError } = await supabase
 
 if (ligneError) throw ligneError;
 
-//ahena ny stock
-
-for (const item of cart) {
-const { error: stockError } = await supabase.rpc('decrementer_stock',{
-    p_produit_id: item.id,
-    p_quantite: item.quantite,
-});
-
-if(stockError) console.error('Erreur stock:', stockError);
-}
-
 // vider le panier
-
 const {data: panierData} = await supabase
 .from('panier')
 .select('id_panier')
@@ -154,28 +196,44 @@ await supabase.from('ligne_panier').delete().eq('id_panier', panierData.id_panie
 
 clearCart();
 
+setAdresse('');
+setTelephone('');
+setNotes('');
+setDateDebut('');
+setDateFin('');
+
+const commandeLabel = mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1);
+const livraisonLabel = mots.livraison.charAt(0).toUpperCase() + mots.livraison.slice(1);
+
 Alert.alert(
-    'Commande confirmée !',
-    `Votre commande #${reference} a été enregistrée avec succès.\n\nTotal: ${totalCommande.toLocaleString('fr-FR')} Ar\nLivraison: ${adresse.trim()}`,
-    [
-      {
-        text: 'Voir mes commandes',
-        onPress:() => navigation.navigate('ClientOrders'),
-      },
-      {
-        text: 'OK',
-        onPress: () => navigation.navigate('Accueil'),
-      },
-    ]
+  `${commandeLabel} confirmée !`,
+  `Votre ${mots.commande} #${reference} a été enregistrée avec succès.\n\nTotal: ${totalCommande.toLocaleString('fr-FR')} Ar${besoinAdresse ? `\n${livraisonLabel}: ${adresse.trim()}` : ''}`,
+  [
+    {
+      text: `Voir mes ${mots.commandePluriel}`,
+      onPress: () => navigation.reset({
+        index: 0,
+        routes: [{ name: 'ClientOrders' }],
+      }),
+    },
+    {
+      text: 'OK',
+      onPress: () => navigation.reset({
+        index: 0,
+        routes: [{ name: 'Accueil' }],
+      }),
+    },
+  ]
 );
 
 }
 catch(error){
 
 console.error('Erreur commande:', error);
-Alert.alert('Erreur', 'Impossible de valider la commande. Veuillez réessayer.');
+Alert.alert('Erreur', `Impossible de valider la ${mots.commande}. Veuillez réessayer.`);
  }finally{
     setLoading(false);
+    isSubmitting.current = false;
  }
 
 };
@@ -186,7 +244,7 @@ return(
 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
  <Ionicons name="arrow-back" size={24} color="#1A1A2E" />
 </TouchableOpacity>
-<Text style={styles.title}>Validation de commande</Text>
+<Text style={styles.title}>Validation de {mots.commande}</Text>
 </View>
 
   <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -210,19 +268,22 @@ return(
         {/** Formulaire */}
 
          <View style={styles.formCard}>
-          <Text style={styles.formTitle}> Informations de livraison</Text>
+          <Text style={styles.formTitle}>Informations de {mots.livraison}</Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Adresse de livraison *</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Ex: Lot IV 123 Bis, Antananarivo"
-              value={adresse}
-              onChangeText={setAdresse}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
+          {besoinAdresse && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Adresse de {mots.livraison} *</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Ex: Lot IV 123 Bis, Antananarivo"
+                value={adresse}
+                onChangeText={setAdresse}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+          )}
+
           <View style={styles.inputGroup}>
                       <Text style={styles.label}>Téléphone *</Text>
                       <TextInput
@@ -233,6 +294,29 @@ return(
                         keyboardType="phone-pad"
                       />
         </View>
+
+        {besoinDuree && (
+          <>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Date d'arrivée / début *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="AAAA-MM-JJ (ex: 2026-09-15)"
+                value={dateDebut}
+                onChangeText={setDateDebut}
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Date de départ / fin *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="AAAA-MM-JJ (ex: 2026-09-17)"
+                value={dateFin}
+                onChangeText={setDateFin}
+              />
+            </View>
+          </>
+        )}
 
          <View style={styles.inputGroup}>
                     <Text style={styles.label}>Instructions particulières</Text>
@@ -261,7 +345,7 @@ return(
           {loading ? (
             <ActivityIndicator color="#cd1e1e" />
           ) : (
-            <Text style={styles.submitButtonText}>Confirmer la commande</Text>
+            <Text style={styles.submitButtonText}>Confirmer la {mots.commande}</Text>
           )}
         </TouchableOpacity>
 </View>
@@ -360,6 +444,3 @@ paymentText: { fontSize: 14, color: '#1E40AF', fontWeight: '500' },
   },
   submitButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });
-
-
-

@@ -1,4 +1,4 @@
-
+import {useState, useEffect} from 'react'
 import { NavigationContainer } from '@react-navigation/native';
 import { View, Text, StyleSheet } from 'react-native';
 
@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
-
+import { supabase } from '../lib/supabase';
 
 
 import HomeScreen from '../screens/HomeScreen';
@@ -37,6 +37,10 @@ import CartScreen from '../screens/Produits/CartScreen';
 import OrderScreen from '../screens/Produits/Client/OrderScreen';
 import ClientOrderScreen from '../screens/Produits/Client/ClientOrderScreen';
 import ClientOrderDetail from '../screens/Produits/Client/ClientOrderDetail';
+import ProOrderScreen from '../screens/Produits/Pro/ProOrderScreen';
+import ProOrderDetailScreen from '../screens/Produits/Pro/ProOrderDetail';
+import NotificationsScreen from '../screens/NotificationsScreeen';
+import MesProduits from '../screens/Produits/Pro/MesProduits';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -62,6 +66,11 @@ function HomeStack() {
      <Stack.Screen name='Order' component={OrderScreen}/>
      <Stack.Screen name='ClientOrders' component={ClientOrderScreen}/>
     <Stack.Screen name="ClientOrderDetail" component={ClientOrderDetail} />
+     <Stack.Screen name="ProOrders" component={ProOrderScreen} />
+     <Stack.Screen name="ProOrderDetail" component={ProOrderDetailScreen} />
+     <Stack.Screen name='Notifications' component={NotificationsScreen}/>
+     <Stack.Screen name='MesProduits' component={MesProduits}/>
+     
     </Stack.Navigator>
   );
 }
@@ -95,7 +104,24 @@ function MainTabs() {
   const { user } = useAuth();
   const { getItemCount } = useCart();
   const itemCount = getItemCount();
+ const [notifNonLue, setNotifNonLue] = useState(0);
 
+ const loadNotifCount = async () => {
+     if (!user) return;
+     const { count, error } = await supabase
+       .from('notifications')
+       .select('*', { count: 'exact', head: true })
+       .eq('utilisateur_id', user.id)
+       .eq('lue', false);
+     if (!error) setNotifNonLue(count || 0);
+   };
+ 
+   useEffect(() => {
+     loadNotifCount();
+     // Recharger quand l'utilisateur revient sur l'app
+     const interval = setInterval(loadNotifCount, 30000); // toutes les 30s
+     return () => clearInterval(interval);
+   }, [user]);
   return (
      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
     <Tab.Navigator
@@ -104,7 +130,24 @@ function MainTabs() {
           let iconName;
           if (route.name === 'Accueil') iconName = focused ? 'home' : 'home-outline';
           else if (route.name === 'Profil') iconName = focused ? 'person' : 'person-outline';
-          else if (route.name === 'Réservations') iconName = focused ? 'calendar' : 'calendar-outline';
+           else if (route.name === 'Notifications') {
+              return (
+                <View>
+                  <Ionicons 
+                    name={focused ? 'notifications' : 'notifications-outline'} 
+                    size={size} 
+                    color={color} 
+                  />
+                  {notifNonLue > 0 && (
+                    <View style={styles.badgeNotif}>
+                      <Text style={styles.badgeNotifText}>
+                        {notifNonLue > 9 ? '9+' : notifNonLue}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            }
           else if (route.name === 'Favoris') iconName = focused ? 'heart' : 'heart-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -130,7 +173,27 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Accueil" component={HomeStack} />
-      <Tab.Screen name="Réservations" component={ReservationsStack} />
+      <Tab.Screen 
+  name="Notifications" 
+  component={NotificationsScreen}
+  options={{
+    tabBarLabel: 'Notifs',
+    tabBarIcon: ({ focused, color, size }) => (
+      <View>
+        <Ionicons 
+          name={focused ? 'notifications' : 'notifications-outline'} 
+          size={size} 
+          color={color} 
+        />
+        {notifNonLue > 0 && (
+          <View style={styles.badgeNotif}>
+            <Text style={styles.badgeNotifText}>{notifNonLue}</Text>
+          </View>
+        )}
+      </View>
+    ),
+  }}
+/>
       <Tab.Screen name="Profil" component={ProfileScreen} />
          <Tab.Screen
                name="Panier"
@@ -169,6 +232,7 @@ function MainTabs() {
 // Stack pour l'authentification (quand déconnecté)
 function AuthStack() {   // ← CE COMPOSANT DOIT ÊTRE DÉFINI ICI
   return (
+    
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
@@ -208,6 +272,23 @@ const styles = StyleSheet.create({
   badgeText: {
     color: '#fff',
     fontSize: 10,
+    fontWeight: 'bold',
+  },
+  badgeNotif: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeNotifText: {
+    color: '#fff',
+    fontSize: 9,
     fontWeight: 'bold',
   },
 });

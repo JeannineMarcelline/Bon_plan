@@ -90,96 +90,116 @@ export const CartProvider = ({ children }) => {
   // 2. AJOUTER UN PRODUIT AU PANIER
   // ═════════════════════════════════════════════════════════
 
-  const addToCart = async (produit, quantite = 1) => {
-    if (!user) {
-      Alert.alert('Connexion requise', 'Connectez-vous pour ajouter au panier');
-      return;
+ const addToCart = async (produit, quantite = 1) => {
+  if (!user) {
+    Alert.alert('Connexion requise', 'Connectez-vous pour ajouter au panier');
+    return;
+  }
+
+  // Vérifier si le produit est de la même entreprise que le panier actuel
+  if (idEntreprise && idEntreprise !== produit.id_entreprise && cart.length > 0) {
+    Alert.alert(
+      '⚠️ Attention',
+      `Vous avez déjà des produits d'une autre entreprise dans votre panier. Voulez-vous vider le panier et ajouter ce produit ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Vider et ajouter', onPress: () => clearCartAndAdd(produit, quantite) }
+      ]
+    );
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const userId = user.id;
+
+    // 1. On demande TOUJOURS à Supabase si ce client a déjà un panier,
+    // peu importe ce que la mémoire de l'app (idPanier) pense savoir.
+    const { data: panierExistant, error: panierError } = await supabase
+      .from('panier')
+      .select('id_panier')
+      .eq('id_client', userId)
+      .maybeSingle();
+
+    if (panierError) throw panierError;
+
+    let panierId;
+
+    if (panierExistant) {
+      // Un panier existe déjà : on le réutilise, on met juste à jour
+      // son entreprise au cas où elle aurait changé.
+      panierId = panierExistant.id_panier;
+
+      const { error: updateEntrepriseError } = await supabase
+        .from('panier')
+        .update({ id_entreprise: produit.id_entreprise })
+        .eq('id_panier', panierId);
+
+      if (updateEntrepriseError) throw updateEntrepriseError;
+
+    } else {
+      // Vraiment aucun panier : on en crée un nouveau, une seule fois.
+      const { data: newPanier, error: createError } = await supabase
+        .from('panier')
+        .insert({
+          id_client: userId,
+          id_entreprise: produit.id_entreprise,
+        })
+        .select('id_panier')
+        .single();
+
+      if (createError) throw createError;
+      panierId = newPanier.id_panier;
     }
 
-    // Vérifier si le produit est de la même entreprise que le panier actuel
-    if (idEntreprise && idEntreprise !== produit.id_entreprise) {
-      Alert.alert(
-        '⚠️ Attention',
-        `Vous avez déjà des produits d'une autre entreprise dans votre panier. Voulez-vous vider le panier et ajouter ce produit ?`,
-        [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Vider et ajouter', onPress: () => clearCartAndAdd(produit, quantite) }
-        ]
-      );
-      return;
-    }
+    setIdPanier(panierId);
+    setIdEntreprise(produit.id_entreprise);
 
-    setLoading(true);
-    try {
-      const userId = user.id;
+    // 2. Vérifier si le produit est déjà dans le panier
+    const { data: existing, error: existingError } = await supabase
+      .from('ligne_panier')
+      .select('id_lignepan, quantite')
+      .eq('id_panier', panierId)
+      .eq('id_produit', produit.id)
+      .maybeSingle();
 
-      // 1. Récupérer ou créer le panier
-      let panierId = idPanier;
+    if (existingError) throw existingError;
 
-      if (!panierId) {
-        // Créer un nouveau panier
-        const { data: newPanier, error: createError } = await supabase
-          .from('panier')
-          .insert({
-            id_client: userId,
-            id_entreprise: produit.id_entreprise,
-          })
-          .select('id_panier')
-          .single();
-
-        if (createError) throw createError;
-        panierId = newPanier.id_panier;
-        setIdPanier(panierId);
-        setIdEntreprise(produit.id_entreprise);
-      }
-
-      // 2. Vérifier si le produit est déjà dans le panier
-      const { data: existing, error: existingError } = await supabase
+    if (existing) {
+      // Mettre à jour la quantité
+      const nouvelleQuantite = existing.quantite + quantite;
+      const { error: updateError } = await supabase
         .from('ligne_panier')
-        .select('id_lignepan, quantite')
-        .eq('id_panier', panierId)
-        .eq('id_produit', produit.id)
-        .maybeSingle();
+        .update({ quantite: nouvelleQuantite })
+        .eq('id_lignepan', existing.id_lignepan);
 
-      if (existingError) throw existingError;
+      if (updateError) throw updateError;
 
-      if (existing) {
-        // Mettre à jour la quantité
-        const nouvelleQuantite = existing.quantite + quantite;
-        const { error: updateError } = await supabase
-          .from('ligne_panier')
-          .update({ quantite: nouvelleQuantite })
-          .eq('id_lignepan', existing.id_lignepan);
+    } else {
+      // Ajouter le produit
+      const { error: insertError } = await supabase
+        .from('ligne_panier')
+        .insert({
+          id_panier: panierId,
+          id_produit: produit.id,
+          quantite: quantite,
+        });
 
-        if (updateError) throw updateError;
+      if (insertError) throw insertError;
 
-        Alert.alert(' Succès', `${produit.nom_produit} quantité mise à jour`);
-      } else {
-        // Ajouter le produit
-        const { error: insertError } = await supabase
-          .from('ligne_panier')
-          .insert({
-            id_panier: panierId,
-            id_produit: produit.id,
-            quantite: quantite,
-          });
-
-        if (insertError) throw insertError;
-
-        Alert.alert(' Succès', `${produit.nom_produit} ajouté au panier`);
-      }
-
-      // Recharger le panier
-      await loadCart();
-
-    } catch (error) {
-      console.error('Erreur ajout panier:', error);
-      Alert.alert('Erreur', 'Impossible d\'ajouter le produit');
-    } finally {
-      setLoading(false);
+      Alert.alert(' Succès', `${produit.nom_produit} ajouté au panier`);
     }
-  };
 
+    // Recharger le panier
+    await loadCart();
+
+  } catch (error) {
+    console.error('Erreur ajout panier:', error);
+    Alert.alert('Erreur', 'Impossible d\'ajouter le produit');
+  } finally {
+    setLoading(false);
+  }
+};
   // ═════════════════════════════════════════════════════════
   // 3. RETIRER UN PRODUIT DU PANIER
   // ═════════════════════════════════════════════════════════
@@ -259,9 +279,7 @@ export const CartProvider = ({ children }) => {
     }
   };
 
-  // ═════════════════════════════════════════════════════════
-  // 5. VIDER LE PANIER
-  // ═════════════════════════════════════════════════════════
+  
 
   const clearCart = async () => {
     if (!user || !idPanier) {
@@ -283,6 +301,8 @@ export const CartProvider = ({ children }) => {
 
       // Le panier reste mais vide
       setCart([]);
+      setIdEntreprise(null);
+      setIdPanier(null);
 
     } catch (error) {
       console.error('Erreur vidage panier:', error);

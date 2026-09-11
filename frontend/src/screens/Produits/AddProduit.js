@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
@@ -18,12 +19,15 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
+import { getConfigCategorie } from '../../Config/categorieConfig';
 
 const Max_photo = 3;
 
-export default function AddProduit ({navigation}) {
+export default function AddProduit ({navigation, route}) {
 
 const {user} = useAuth();
+const produitId = route.params?.produitId || null;
+const estModification = produitId !== null;
 
 const [nom_produit, setNom_produit] = useState('');
 const [prix_produit, setPrix_produit] = useState('');
@@ -31,6 +35,73 @@ const [description_pro, setDescription_pro] = useState('');
 const [stock, setStock] = useState('')
 const [photos_produit, setPhotos_produit] = useState([]);
 const [upLoading, setUpLoading] = useState(false);
+const [chargementInitial, setChargementInitial] = useState(true);
+const [caracteristiques, setCaracteristique] = useState('');
+// Vocabulaire de l'entreprise du pro connecté (chambre, poste, produit...)
+const [mots, setMots] = useState(getConfigCategorie(null).vocabulaire);
+const [entrepriseId, setEntrepriseId] = useState(null);
+
+useEffect(() => {
+  initialiser();
+}, []);
+
+const initialiser = async () => {
+  try {
+    // On récupère toujours la catégorie de l'entreprise, qu'on soit
+    // en train d'ajouter ou de modifier, pour adapter le vocabulaire.
+    const { data: entreprise, error: entrepriseError } = await supabase
+      .from('entreprises')
+      .select('id, categories ( nom )')
+      .eq('utilisateur_id', user.id)
+      .maybeSingle();
+
+    if (entrepriseError) throw entrepriseError;
+
+    if (entreprise) {
+      setEntrepriseId(entreprise.id);
+      const config = getConfigCategorie(entreprise.categories?.nom || null);
+      setMots(config.vocabulaire);
+    }
+
+    if (estModification) {
+      await chargerProduitExistant();
+    }
+  } catch (error) {
+    console.error('Erreur initialisation:', error);
+  } finally {
+    setChargementInitial(false);
+  }
+};
+
+const chargerProduitExistant = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('produits')
+      .select('*')
+      .eq('id', produitId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      setNom_produit(data.nom_produit || '');
+      setPrix_produit(data.prix_produit?.toString() || '');
+      setDescription_pro(data.description_pro || '');
+      setStock(data.stock?.toString() || '');
+      setPhotos_produit(data.photos_produit || []);
+
+      if(data.caracteristiques){
+        const texte = Object.values(data.caracteristiques).join(', ');
+        setCaracteristique(texte);
+      }
+    }
+
+  } catch (error) {
+    console.error('Erreur chargement produit:', error);
+    Alert.alert('Erreur', `Impossible de charger cet élément`);
+  }
+};
+
 
 const pickImage = async () => {
   if (photos_produit.length >= Max_photo) {
@@ -38,7 +109,6 @@ const pickImage = async () => {
     return;
   }
 
-  // ✅ Utiliser requestMediaLibraryPermissionsAsync() au lieu de getMediaLibraryPermissionsAsync()
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
   if (status !== 'granted') {
@@ -60,8 +130,6 @@ const pickImage = async () => {
     setPhotos_produit([...photos_produit, result.assets[0].uri]);
   }
 };
-
-
 
 
 const removePhoto = (index) => {
@@ -103,51 +171,86 @@ if(!nom_produit || !prix_produit || !stock) {
 try{
 setUpLoading(true);
 
-const { data: entreprise, error: entrepriseError} = await supabase
-.from('entreprises')
-.select('id')
-.eq('utilisateur_id', user.id)
-.maybeSingle();
-
-if (entrepriseError) throw entrepriseError;
-
-if(!entreprise){
-
-Alert.alert('Erreur', 'Vous n\'avez pas encore d\'entreprise');
-setUpLoading(false);
-return;
+if (!entrepriseId) {
+  Alert.alert('Erreur', 'Vous n\'avez pas encore d\'entreprise');
+  setUpLoading(false);
+  return;
 }
 
 const photoUrls = [];
 for (let i=0; i < photos_produit.length; i++) {
+const uri = photos_produit[i];
+
+if(uri.startsWith('file://') || uri.startsWith('content://')){
 const url = await uploadPhoto(photos_produit[i], user.id, i);
 if(url) photoUrls.push(url);
-
+}else{
+  photoUrls.push(uri);
+}
 }
 
-const {error: produitError} = await supabase
-.from('produits')
-.insert({
+const caracteristiquesJson = caracteristiques
+.split(',')
+.map(item => item.trim())
+.filter(item => item.length > 0)
+.reduce((obj, item, index) => {
+  obj[`detail_${index + 1}`] = item;
+  return obj;
+}, {});
+
+const donneesProduit = {
   nom_produit,
   description_pro,
   prix_produit: parseFloat(prix_produit),
   stock: parseInt(stock),
-  photos_produit: photoUrls,
-  id_entreprise: entreprise.id,
-});
+  photos_produit: photoUrls.length > 0 ? photoUrls : photos_produit, // garde les anciennes photos si pas de nouvelles
+  caracteristiques: caracteristiquesJson,
+};
 
-if (produitError) throw produitError;
+if (estModification) {
+  const { error: produitError } = await supabase
+    .from('produits')
+    .update(donneesProduit)
+    .eq('id', produitId);
 
-Alert.alert('Succès', 'Produit ajouté !');
+  if (produitError) throw produitError;
+
+  Alert.alert('Succès', `${mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1)} mis${mots.produit === 'produit' ? '' : 'e'} à jour !`, [
+    { text: 'OK', onPress: () => navigation.goBack() }
+  ]);
+} else {
+  const { error: produitError } = await supabase
+    .from('produits')
+    .insert({
+      ...donneesProduit,
+      id_entreprise: entrepriseId,
+      actif: true,
+    });
+
+  if (produitError) throw produitError;
+
+  Alert.alert('Succès', `${mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1)} ajouté${mots.produit === 'produit' ? '' : 'e'} !`, [
+    { text: 'OK', onPress: () => navigation.goBack() }
+  ]);
+}
 
 }catch(error){
 console.error('Erreur ajout de produit:' , error);
-Alert.alert('Erreur', 'Impossible d\'ajouter le produit');
+Alert.alert('Erreur', `Impossible d'enregistrer ${mots.produit === 'produit' ? 'ce produit' : `cette ${mots.produit}`}`);
 }finally{
   setUpLoading(false);
 }
 };
 
+if (chargementInitial) {
+  return (
+    <SafeAreaView style={styles.center}>
+      <ActivityIndicator size="large" color="#2563EB" />
+    </SafeAreaView>
+  );
+}
+
+const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -165,13 +268,15 @@ Alert.alert('Erreur', 'Impossible d\'ajouter le produit');
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
               <Ionicons name="arrow-back" size={24} color="#1A1A2E" />
             </TouchableOpacity>
-            <Text style={styles.title}>Ajouter un produit</Text>
+            <Text style={styles.title}>
+              {estModification ? `Modifier ${mots.produit === 'produit' ? 'le' : 'la'} ${mots.produit}` : `Ajouter ${mots.produit === 'produit' ? 'un' : 'une'} ${mots.produit}`}
+            </Text>
           </View>
 
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Nom du produit *</Text>
-              <TextInput style={styles.input} placeholder="Ex: Tomates fraîches" value={nom_produit
+              <Text style={styles.label}>Nom {mots.produit === 'produit' ? 'du' : 'de la'} {mots.produit} *</Text>
+              <TextInput style={styles.input} placeholder={`Ex: ${nomLabel} standard`} value={nom_produit
 
               } onChangeText={setNom_produit} />
             </View>
@@ -180,12 +285,25 @@ Alert.alert('Erreur', 'Impossible d\'ajouter le produit');
               <Text style={styles.label}>Description</Text>
               <TextInput
                 style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-                placeholder="Décrivez votre produit..."
+                placeholder="Décrivez ce que vous proposez..."
                 value={description_pro}
                 onChangeText={setDescription_pro}
                 multiline
               />
             </View>
+
+             <View style={styles.inputGroup}>
+             <Text style={styles.label}>Caractéristiques</Text>
+            <TextInput
+              style={[styles.input, { height: 60 }]}
+              placeholder="Ex: 2 personnes, wifi, climatisation"
+             value={caracteristiques}
+             onChangeText={setCaracteristique}
+             />
+  <Text style={styles.helperText}>
+    Séparez chaque caractéristique par une virgule
+  </Text>
+</View>
 
             <View style={styles.row}>
               <View style={[styles.inputGroup, styles.halfWidth]}>
@@ -225,7 +343,9 @@ Alert.alert('Erreur', 'Impossible d\'ajouter le produit');
               disabled={upLoading}
             >
               <Text style={styles.submitButtonText}>
-                {upLoading ? 'Enregistrement...' : 'Enregistrer le produit'}
+                {upLoading
+                   ? 'Enregistrement...'
+                   : estModification ? 'Mettre à jour' : `Enregistrer ${mots.produit === 'produit' ? 'le produit' : `la ${mots.produit}`}`}
               </Text>
             </TouchableOpacity>
           </View>
@@ -290,4 +410,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   submitButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  center:{
+    flex:1,
+    justifyContent:'center',
+    alignItems:'center'
+  },
+  helperText: {fontSize: 12, color: "#9CA3AF", marginTop: 4},
 });

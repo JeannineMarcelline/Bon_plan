@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState} from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,21 @@ import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { getConfigCategorie } from '../Config/categorieConfig';
 
 export default function ProDashbordScreen({ navigation }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [entreprise, setEntreprise] = useState(null);
-  const [stats, setStats] = useState({ vehicules: 0, reservations: 0, enAttente: 0 });
+  const [stats, setStats] = useState({
+   vehicules: 0, 
+   reservations: 0, 
+   produits: 0,
+   commandes: 0, 
+   enAttente: 0,
+  });
+  // Vocabulaire par défaut en attendant de connaître la catégorie
+  const [mots, setMots] = useState(getConfigCategorie(null).vocabulaire);
 
   const loadData = async () => {
   try {
@@ -67,32 +76,44 @@ if (entrepriseData) {
   setStats({
     vehicules: nbVehicules || 0,
     reservations: nbReservations,
+    produits: 0,
+    commandes: 0,
     enAttente: nbEnAttente,
   });
  //==== produit=====
 }else{
- 
+
+  // Vocabulaire adapté à la catégorie de cette entreprise (produit/chambre/poste...)
+  const config = getConfigCategorie(categorieNom || null);
+  setMots(config.vocabulaire);
+
   const{ count : nbProduits} = await supabase
   .from('produits')
   .select('*', { count : 'exact' , head: true})
   .eq('id_entreprise', entrepriseData.id);
 
+  // Correction : le nom de la table est "commande" (singulier), pas "commandes"
   const {count :  nbCommandes} = await supabase
-  .from('commandes')
+  .from('commande')
   .select('*', { count : 'exact', head: true})
   .eq('id_entreprise', entrepriseData.id);
 
   const {count : nbEnAttente} = await supabase
-  .from('commandes')
+  .from('commande')
   .select('*', { count :'exact',head: true})
-  .eq('statut', 'en_attente_retrait');
+  .eq('id_entreprise', entrepriseData.id)
+  .eq('statut', 'en_attente');
 
   setStats({
+    vehicules: 0,
+    reservations: 0,
     produits: nbProduits || 0 ,
     commandes: nbCommandes || 0,
     enAttente: nbEnAttente || 0,
   });
+  return categorieNom;
 }
+return null;
 }
 } catch (error) {
       console.error('Erreur chargement dashboard:', error);
@@ -100,6 +121,7 @@ if (entrepriseData) {
       setLoading(false);
     }
   };
+
 
    const checkNewReservations = async () => {
   try {
@@ -142,12 +164,17 @@ if (entrepriseData) {
   }
 };
 
-  useFocusEffect(
-    React.useCallback(() => {
-      loadData();
-      checkNewReservations();
-    }, [])
-  );
+ useFocusEffect(
+  React.useCallback(() => {
+    const run = async () => {
+      const categorieNom = await loadData();
+      if (categorieNom === 'Transport') {
+        checkNewReservations();
+      }
+    };
+    run();
+  }, [user?.id])
+);
 
   if (loading) {
     return (
@@ -171,6 +198,9 @@ if (entrepriseData) {
       </SafeAreaView>
     );
   }
+
+  const produitPlurielLabel = mots.produitPluriel.charAt(0).toUpperCase() + mots.produitPluriel.slice(1);
+  const commandePlurielLabel = mots.commandePluriel.charAt(0).toUpperCase() + mots.commandePluriel.slice(1);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -278,26 +308,28 @@ if (entrepriseData) {
             <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <View style={[styles.statIconWrap, { backgroundColor: '#EFF6FF' }]}>
-              <Ionicons name="bus" size={16} color="#2563EB" />
+              <Ionicons name="cube-outline" size={16} color="#2563EB" />
             </View>
             <View>
               <Text style={styles.statNumber}>{stats.produits}</Text>
-              <Text style={styles.statLabel}>Produits</Text>
+              <Text style={styles.statLabel}>{produitPlurielLabel}</Text>
             </View>
           </View>
           <View style={styles.statCard}>
             <View style={[styles.statIconWrap, { backgroundColor: '#ECFDF5' }]}>
-              <Ionicons name="calendar" size={16} color="#10B981" />
+              <Ionicons name="receipt-outline" size={16} color="#10B981" />
             </View>
             <View>
               <Text style={styles.statNumber}>{stats.commandes}</Text>
-              <Text style={styles.statLabel}>Commandes</Text>
+              <Text style={styles.statLabel}>{commandePlurielLabel}</Text>
             </View>
           </View>
         </View>
            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('AddProduit')}>
             <Ionicons name="add-circle-outline" size={24} color="#007BFF" />
-            <Text style={styles.menuItemText}>Ajouter un Produit</Text>
+            <Text style={styles.menuItemText}>
+              Ajouter {mots.produit === 'produit' ? 'un' : 'une'} {mots.produit}
+            </Text>
             <Ionicons name="chevron-forward" size={20} color="#ccc" />
            </TouchableOpacity>
 
@@ -306,16 +338,16 @@ if (entrepriseData) {
             onPress={() => navigation.navigate('MesProduits')}
           >
             <Ionicons name="list-outline" size={24} color="#28a745" />
-            <Text style={styles.menuItemText}>Mes Produits</Text>
+            <Text style={styles.menuItemText}>Mes {mots.produitPluriel}</Text>
             <Ionicons name="chevron-forward" size={20} color="#ccc" />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.menuItem, styles.lastMenuItem]}
-            onPress={() => navigation.navigate('MesCommandes')}
+            onPress={() => navigation.navigate('ProOrders')}
           >
             <Ionicons name="calendar-outline" size={24} color="#ffc107" />
-            <Text style={styles.menuItemText}>Mes commandes</Text>
+            <Text style={styles.menuItemText}>Mes {mots.commandePluriel} reçues</Text>
             {stats.enAttente > 0 && (
               <View style={styles.notifBadge}>
                 <Text  style={styles.notifBadgeText}>{stats.enAttente}</Text>

@@ -1,30 +1,24 @@
-// screens/Produits/Client/ClientOrderDetailScreen.js
-// ============================================================
-// DÉTAIL D'UNE COMMANDE
-// ============================================================
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  Alert,
 } from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../lib/supabase';
+import { getConfigCategorie } from '../../../Config/categorieConfig';
 
 export default function ClientOrderDetail({ navigation, route }) {
   const { commandeId } = route.params;
   const [commande, setCommande] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // ============================================================
-  // CHARGER LE DÉTAIL DE LA COMMANDE
-  // ============================================================
+  const [updating, setUpdating] = useState(false);
 
   const loadCommande = async () => {
     try {
@@ -36,11 +30,13 @@ export default function ClientOrderDetail({ navigation, route }) {
           statut,
           prix_total,
           date_commande,
+          date_debut,
+          date_fin,
           adresse_livraison,
           telephone_livraison,
           notes,
           mode_paiement,
-          entreprises (nom, logo),
+          entreprises (nom, logo, categories (nom)),
           ligne_commande (
             quantite,
             prix_unitaire,
@@ -68,10 +64,6 @@ export default function ClientOrderDetail({ navigation, route }) {
   useEffect(() => {
     loadCommande();
   }, []);
-
-  // ============================================================
-  // AFFICHER LE STATUT
-  // ============================================================
 
   const STATUTS = {
     en_attente: {
@@ -110,10 +102,6 @@ export default function ClientOrderDetail({ navigation, route }) {
     return STATUTS[statut] || STATUTS.en_attente;
   };
 
-  // ============================================================
-  // FORMATER LA DATE
-  // ============================================================
-
   const formatDate = (dateString) => {
     if (!dateString) return 'Date inconnue';
     const date = new Date(dateString);
@@ -126,9 +114,15 @@ export default function ClientOrderDetail({ navigation, route }) {
     });
   };
 
-  // ============================================================
-  // CHARGEMENT
-  // ============================================================
+  const formatDateSimple = (dateString) => {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+  };
 
   if (loading) {
     return (
@@ -146,9 +140,48 @@ export default function ClientOrderDetail({ navigation, route }) {
     );
   }
 
-  // ============================================================
-  // AFFICHAGE
-  // ============================================================
+  // Vocabulaire adapté selon la catégorie de l'entreprise concernée
+  const nomCategorie = commande.entreprises?.categories?.nom || null;
+  const config = getConfigCategorie(nomCategorie);
+  const besoinAdresse = config.besoinAdresse;
+  const besoinDuree = config.besoinDuree;
+  const mots = config.vocabulaire;
+
+  const handleAnnulationClient = () => {
+    Alert.alert(
+      `Annuler la ${mots.commande}`,
+      `Voulez vous vraiment annuler la ${mots.commande} #${commande.reference} ?`,
+      [
+        { text: 'Non', style: 'cancel' },
+        {
+          text: 'Oui, annuler',
+          style: 'destructive',
+          onPress: async () => {
+            setUpdating(true);
+            try {
+              const { error } = await supabase
+                .from('commande')
+                .update({ statut: 'annulée' })
+                .eq('id_commande', commandeId)
+                .eq('statut', 'en_attente');
+
+              if (error) throw error;
+              Alert.alert(
+                `${mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1)} annulée`,
+                `Votre ${mots.commande} a bien été annulée.`
+              );
+              await loadCommande();
+            } catch (error) {
+              console.error('Erreur annulation:', error);
+              Alert.alert('Erreur', `Impossible d'annuler la ${mots.commande}`);
+            } finally {
+              setUpdating(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const statutInfo = getStatut(commande.statut);
   const lignes = commande.ligne_commande || [];
@@ -161,7 +194,9 @@ export default function ClientOrderDetail({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#1A1A2E" />
         </TouchableOpacity>
-        <Text style={styles.title}>Détail de la commande</Text>
+        <Text style={styles.title}>
+          Détail de la {mots.commande}
+        </Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -191,17 +226,19 @@ export default function ClientOrderDetail({ navigation, route }) {
           </View>
         </View>
 
-        {/* Carte Produits */}
+        {/* Carte Produits / Chambres / Postes... */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>📦 Produits commandés</Text>
+          <Text style={styles.cardTitle}>
+            📦 {mots.produitPluriel.charAt(0).toUpperCase() + mots.produitPluriel.slice(1)} {besoinDuree ? 'réservé(e)s' : 'commandés'}
+          </Text>
           {lignes.length === 0 ? (
-            <Text style={styles.emptyText}>Aucun produit</Text>
+            <Text style={styles.emptyText}>Aucun {mots.produit}</Text>
           ) : (
             lignes.map((ligne, index) => (
               <View key={index} style={styles.produitItem}>
                 <View style={styles.produitInfo}>
                   <Text style={styles.produitNom}>
-                    {ligne.produits?.nom_produit || 'Produit'}
+                    {ligne.produits?.nom_produit || mots.produit}
                   </Text>
                   <Text style={styles.produitDetail}>
                     {ligne.quantite} × {ligne.prix_unitaire?.toLocaleString('fr-FR') || 0} Ar
@@ -221,44 +258,97 @@ export default function ClientOrderDetail({ navigation, route }) {
           </View>
         </View>
 
-        {/* Carte Livraison */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>📍 Livraison</Text>
-          <View style={styles.infoRow}>
-            <Ionicons name="location-outline" size={18} color="#6B7280" />
-            <Text style={styles.infoText}>{commande.adresse_livraison || 'Non renseignée'}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Ionicons name="call-outline" size={18} color="#6B7280" />
-            <Text style={styles.infoText}>{commande.telephone_livraison || 'Non renseigné'}</Text>
-          </View>
-          {commande.notes && (
+        {/* Carte Dates (si séjour/session/événement) */}
+        {besoinDuree && (commande.date_debut || commande.date_fin) && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>📅 Dates du {mots.livraison}</Text>
             <View style={styles.infoRow}>
-              <Ionicons name="document-text-outline" size={18} color="#6B7280" />
-              <Text style={styles.infoText}>{commande.notes}</Text>
+              <Ionicons name="log-in-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>
+                Début : {formatDateSimple(commande.date_debut) || 'Non renseigné'}
+              </Text>
             </View>
-          )}
-          <View style={styles.infoRow}>
-            <Ionicons name="cash-outline" size={18} color="#6B7280" />
-            <Text style={styles.infoText}>
-              {commande.mode_paiement === 'cash' ? 'Paiement à la livraison' : commande.mode_paiement}
-            </Text>
+            <View style={styles.infoRow}>
+              <Ionicons name="log-out-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>
+                Fin : {formatDateSimple(commande.date_fin) || 'Non renseigné'}
+              </Text>
+            </View>
           </View>
-        </View>
+        )}
+
+        {/* Carte Livraison (seulement si la catégorie en a besoin) */}
+        {besoinAdresse && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>
+              📍 {mots.livraison.charAt(0).toUpperCase() + mots.livraison.slice(1)}
+            </Text>
+            <View style={styles.infoRow}>
+              <Ionicons name="location-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>{commande.adresse_livraison || 'Non renseignée'}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Ionicons name="call-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>{commande.telephone_livraison || 'Non renseigné'}</Text>
+            </View>
+            {commande.notes && (
+              <View style={styles.infoRow}>
+                <Ionicons name="document-text-outline" size={18} color="#6B7280" />
+                <Text style={styles.infoText}>{commande.notes}</Text>
+              </View>
+            )}
+            <View style={styles.infoRow}>
+              <Ionicons name="cash-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>
+                {commande.mode_paiement === 'cash' ? 'Paiement à la livraison' : commande.mode_paiement}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Si pas d'adresse, on affiche quand même le téléphone et le paiement séparément */}
+        {!besoinAdresse && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>ℹ️ Contact</Text>
+            <View style={styles.infoRow}>
+              <Ionicons name="call-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>{commande.telephone_livraison || 'Non renseigné'}</Text>
+            </View>
+            {commande.notes && (
+              <View style={styles.infoRow}>
+                <Ionicons name="document-text-outline" size={18} color="#6B7280" />
+                <Text style={styles.infoText}>{commande.notes}</Text>
+              </View>
+            )}
+            <View style={styles.infoRow}>
+              <Ionicons name="cash-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>
+                {commande.mode_paiement === 'cash' ? 'Paiement sur place' : commande.mode_paiement}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Carte Date */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>📅 Date de commande</Text>
+          <Text style={styles.cardTitle}>📅 Date de {mots.commande}</Text>
           <Text style={styles.dateText}>{formatDate(commande.date_commande)}</Text>
         </View>
+
+        {commande.statut === 'en_attente' && (
+          <TouchableOpacity
+            style={styles.annulerButton}
+            onPress={handleAnnulationClient}
+            disabled={updating}
+          >
+            <Ionicons name="close-circle-outline" size={18} color="#fff" />
+            <Text style={styles.annulerButtonText}>Annuler ma {mots.commande}</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-// ============================================================
-// STYLES
-// ============================================================
 
 const styles = StyleSheet.create({
   container: {
@@ -427,5 +517,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#EF4444',
     textAlign: 'center',
+  },
+  annulerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    paddingVertical: 14,
+    gap: 8,
+    marginTop: 16,
+    width: '100%',
+  },
+  annulerButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 14,
   },
 });

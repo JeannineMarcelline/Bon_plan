@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
 
    
     if (!profil && retriesLeft > 0) {
-      console.log(`⏳ Profil pas encore trouvé, nouvelle tentative dans 400ms... (${retriesLeft} restantes)`);
+      console.log(` Profil pas encore trouvé, nouvelle tentative dans 400ms... (${retriesLeft} restantes)`);
       await wait(400);
       return fetchProfile(authUser, retriesLeft - 1);
     }
@@ -59,11 +59,11 @@ export function AuthProvider({ children }) {
     initSession();
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('🔄 Auth event:', event); // ex: SIGNED_IN, SIGNED_OUT...
+        console.log(' Auth event:', event); // ex: SIGNED_IN, SIGNED_OUT...
 
     
         if (isRegisteringRef.current) {
-          console.log('⏸️ Inscription en cours, onAuthStateChange met setUser en pause');
+          console.log(' Inscription en cours, onAuthStateChange met setUser en pause');
           setLoading(false);
           return;
         }
