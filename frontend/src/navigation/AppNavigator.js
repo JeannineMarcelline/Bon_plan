@@ -1,4 +1,4 @@
-import {useState, useEffect} from 'react'
+import { useState, useEffect, useCallback } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { View, Text, StyleSheet } from 'react-native';
 
@@ -6,10 +6,10 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { supabase } from '../lib/supabase';
-
 
 import HomeScreen from '../screens/HomeScreen';
 import CompanyScreen from '../screens/CompanyScreen';
@@ -21,7 +21,7 @@ import AdminScreen from '../screens/AdminScreen';
 import AdminVillesScreen from '../screens/AdminVillesScreen';
 import AdminCategorie from '../screens/AdminCategorie';
 import AdminUserScreen from '../screens/AdminUserScreen';
-import ProDashbordScreen from '..//screens/ProDashbordScreen'
+import ProDashbordScreen from '../screens/ProDashbordScreen';
 import AdminEntrepriseScreen from '../screens/AdminEntrepriseScreen';
 import CompanyVehiculeScreen from '../screens/CompanyVehiculeScreen';
 import PlaceScreen from '../screens/PlaceScreen';
@@ -45,51 +45,46 @@ import MesProduits from '../screens/Produits/Pro/MesProduits';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Stack pour l'application principale (quand connecté)
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Company" component={CompanyScreen} />
       <Stack.Screen name="AddCompany" component={AddCompanyScreen} />
-      <Stack.Screen  name="ProDashbord" component={ProDashbordScreen}/>
-      <Stack.Screen  name="CompanyVehicules" component={CompanyVehiculeScreen}/>
-     <Stack.Screen  name='Places' component={PlaceScreen}/>
-     <Stack.Screen name="MesReservations" component={MesReservationsScreen} /> 
-     <Stack.Screen name="AddVehicle" component={AddVehiculeScreen} />
-     <Stack.Screen name="MesVehicules" component={MesVehiculesScreen} />
-     <Stack.Screen name="ProReservation" component={ProReservation} />
-     <Stack.Screen name="EditVehicule" component={EditVehicule} />
-     <Stack.Screen name="TicketScreen" component={TicketScreen}/>
-     <Stack.Screen name="AddProduit" component={AddProduit} />
-     <Stack.Screen name="CompanyProduits" component={CompanyProduits} />
-     <Stack.Screen name='Order' component={OrderScreen}/>
-     <Stack.Screen name='ClientOrders' component={ClientOrderScreen}/>
-    <Stack.Screen name="ClientOrderDetail" component={ClientOrderDetail} />
-     <Stack.Screen name="ProOrders" component={ProOrderScreen} />
-     <Stack.Screen name="ProOrderDetail" component={ProOrderDetailScreen} />
-     <Stack.Screen name='Notifications' component={NotificationsScreen}/>
-     <Stack.Screen name='MesProduits' component={MesProduits}/>
-     
+      <Stack.Screen name="ProDashbord" component={ProDashbordScreen} />
+      <Stack.Screen name="CompanyVehicules" component={CompanyVehiculeScreen} />
+      <Stack.Screen name="Places" component={PlaceScreen} />
+      <Stack.Screen name="MesReservations" component={MesReservationsScreen} />
+      <Stack.Screen name="AddVehicle" component={AddVehiculeScreen} />
+      <Stack.Screen name="MesVehicules" component={MesVehiculesScreen} />
+      <Stack.Screen name="ProReservation" component={ProReservation} />
+      <Stack.Screen name="EditVehicule" component={EditVehicule} />
+      <Stack.Screen name="TicketScreen" component={TicketScreen} />
+      <Stack.Screen name="AddProduit" component={AddProduit} />
+      <Stack.Screen name="CompanyProduits" component={CompanyProduits} />
+      <Stack.Screen name="Order" component={OrderScreen} />
+      <Stack.Screen name="ClientOrders" component={ClientOrderScreen} />
+      <Stack.Screen name="ClientOrderDetail" component={ClientOrderDetail} />
+      <Stack.Screen name="ProOrders" component={ProOrderScreen} />
+      <Stack.Screen name="ProOrderDetail" component={ProOrderDetailScreen} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="MesProduits" component={MesProduits} />
     </Stack.Navigator>
   );
 }
 
 function AdminStack() {
-  return(
-    <Stack.Navigator screenOptions={{ headerShown: false}}>
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="AdminDashbord" component={AdminScreen} />
       <Stack.Screen name="AdminVilles" component={AdminVillesScreen} />
       <Stack.Screen name="AdminCategorie" component={AdminCategorie} />
       <Stack.Screen name="AdminUser" component={AdminUserScreen} />
       <Stack.Screen name="AdminEntreprises" component={AdminEntrepriseScreen} />
-    
-
     </Stack.Navigator>
   );
 }
 
-// Stack pour l'onglet Réservations (nécessaire pour pouvoir naviguer vers TicketScreen depuis là)
 function ReservationsStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -99,140 +94,150 @@ function ReservationsStack() {
   );
 }
 
-// Tabs pour l'application principale
 function MainTabs() {
   const { user } = useAuth();
   const { getItemCount } = useCart();
   const itemCount = getItemCount();
- const [notifNonLue, setNotifNonLue] = useState(0);
 
- const loadNotifCount = async () => {
-     if (!user) return;
-     const { count, error } = await supabase
-       .from('notifications')
-       .select('*', { count: 'exact', head: true })
-       .eq('utilisateur_id', user.id)
-       .eq('lue', false);
-     if (!error) setNotifNonLue(count || 0);
-   };
- 
-   useEffect(() => {
-     loadNotifCount();
-     // Recharger quand l'utilisateur revient sur l'app
-     const interval = setInterval(loadNotifCount, 30000); // toutes les 30s
-     return () => clearInterval(interval);
-   }, [user]);
+  const [notifNonLue, setNotifNonLue] = useState(0);
+
+  const loadNotifCount = useCallback(async () => {
+    if (!user) return;
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('utilisateur_id', user.id)
+      .eq('lue', false);
+
+    if (error) {
+      console.error('Erreur chargement compteur notifs:', error);
+      return;
+    }
+    setNotifNonLue(count || 0);
+  }, [user?.id]);
+
+  // Recharge toutes les 30s (filet de sécurité si l'user reste sur un écran)
+  useEffect(() => {
+    loadNotifCount();
+    const interval = setInterval(loadNotifCount, 30000);
+    return () => clearInterval(interval);
+  }, [loadNotifCount]);
+
+  // Recharge à CHAQUE focus d'un onglet (retour sur l'app, changement d'onglet)
+  useFocusEffect(
+    useCallback(() => {
+      loadNotifCount();
+    }, [loadNotifCount])
+  );
+
   return (
-     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-          if (route.name === 'Accueil') iconName = focused ? 'home' : 'home-outline';
-          else if (route.name === 'Profil') iconName = focused ? 'person' : 'person-outline';
-           else if (route.name === 'Notifications') {
-              return (
-                <View>
-                  <Ionicons 
-                    name={focused ? 'notifications' : 'notifications-outline'} 
-                    size={size} 
-                    color={color} 
-                  />
-                  {notifNonLue > 0 && (
-                    <View style={styles.badgeNotif}>
-                      <Text style={styles.badgeNotifText}>
-                        {notifNonLue > 9 ? '9+' : notifNonLue}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
-            }
-          else if (route.name === 'Favoris') iconName = focused ? 'heart' : 'heart-outline';
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#007BFF',
-        tabBarInactiveTintColor: '#95a5a6',
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          borderTopColor: '#f0f0f0',
-          height: 45,
-          paddingBottom: 0,
-          paddingTop: 7,
-           position: 'absolute', // ← Permet de coller en bas
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName;
+            if (route.name === 'Accueil') iconName = focused ? 'home' : 'home-outline';
+            else if (route.name === 'Profil') iconName = focused ? 'person' : 'person-outline';
+            else if (route.name === 'Favoris') iconName = focused ? 'heart' : 'heart-outline';
+            // Notifications et Panier ont leurs propres tabBarIcon dans <Tab.Screen>
+            if (!iconName) return null;
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+          tabBarActiveTintColor: '#007BFF',
+          tabBarInactiveTintColor: '#95a5a6',
+          headerShown: false,
+          tabBarStyle: {
+            backgroundColor: '#fff',
+            borderTopColor: '#f0f0f0',
+            height: 45,
+            paddingBottom: 0,
+            paddingTop: 7,
+            position: 'absolute',
             bottom: 0,
             left: 0,
             right: 0,
             elevation: 0,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '500',
-        },
-      })}
-    >
-      <Tab.Screen name="Accueil" component={HomeStack} />
-      <Tab.Screen 
-  name="Notifications" 
-  component={NotificationsScreen}
-  options={{
-    tabBarLabel: 'Notifs',
-    tabBarIcon: ({ focused, color, size }) => (
-      <View>
-        <Ionicons 
-          name={focused ? 'notifications' : 'notifications-outline'} 
-          size={size} 
-          color={color} 
-        />
-        {notifNonLue > 0 && (
-          <View style={styles.badgeNotif}>
-            <Text style={styles.badgeNotifText}>{notifNonLue}</Text>
-          </View>
-        )}
-      </View>
-    ),
-  }}
-/>
-      <Tab.Screen name="Profil" component={ProfileScreen} />
-         <Tab.Screen
-               name="Panier"
-               component={CartScreen}
-               options={{
-                 tabBarIcon: ({ focused, color, size }) => (
-                   <View>
-                     <Ionicons name={focused ? 'cart' : 'cart-outline'} size={size} color={color} />
-                     {itemCount > 0 && (
-                       <View style={styles.badge}>
-                         <Text style={styles.badgeText}>{itemCount}</Text>
-                       </View>
-                     )}
-                   </View>
-                 ),
-               }}
-             />
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '500',
+          },
+        })}
+      >
+        <Tab.Screen name="Accueil" component={HomeStack} />
 
-      {user?.role === 'admin' && (
-        <Tab.Screen 
-        name= 'admin'
-        component={AdminStack}
-        options={{
-        tabBarLabel: 'Admin',
-        tabBarIcon: ({ focused, color, size }) => (
-        <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />
-      ),
-        }}
+        <Tab.Screen
+          name="Notifications"
+          component={NotificationsScreen}
+          options={{
+            tabBarLabel: 'Notifs',
+            tabBarIcon: ({ focused, color, size }) => (
+              <View>
+                <Ionicons
+                  name={focused ? 'notifications' : 'notifications-outline'}
+                  size={size}
+                  color={color}
+                />
+                {notifNonLue > 0 && (
+                  <View style={styles.badgeNotif}>
+                    <Text style={styles.badgeNotifText}>
+                      {notifNonLue > 9 ? '9+' : notifNonLue}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ),
+          }}
         />
-      )}
-    </Tab.Navigator>
+
+        <Tab.Screen name="Profil" component={ProfileScreen} />
+
+        <Tab.Screen
+          name="Panier"
+          component={CartScreen}
+          options={{
+            tabBarIcon: ({ focused, color, size }) => (
+              <View>
+                <Ionicons
+                  name={focused ? 'cart' : 'cart-outline'}
+                  size={size}
+                  color={color}
+                />
+                {itemCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {itemCount > 9 ? '9+' : itemCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ),
+          }}
+        />
+
+        {user?.role === 'admin' && (
+          <Tab.Screen
+            name="admin"
+            component={AdminStack}
+            options={{
+              tabBarLabel: 'Admin',
+              tabBarIcon: ({ focused, color, size }) => (
+                <Ionicons
+                  name={focused ? 'settings' : 'settings-outline'}
+                  size={size}
+                  color={color}
+                />
+              ),
+            }}
+          />
+        )}
+      </Tab.Navigator>
     </SafeAreaView>
   );
 }
 
-// Stack pour l'authentification (quand déconnecté)
-function AuthStack() {   // ← CE COMPOSANT DOIT ÊTRE DÉFINI ICI
+function AuthStack() {
   return (
-    
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
@@ -240,18 +245,16 @@ function AuthStack() {   // ← CE COMPOSANT DOIT ÊTRE DÉFINI ICI
   );
 }
 
-// Navigation principale
 export default function AppNavigator() {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return null; // Écran de chargement
+    return null;
   }
 
   return (
     <NavigationContainer>
       {user ? <MainTabs /> : <AuthStack />}
-       
     </NavigationContainer>
   );
 }

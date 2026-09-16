@@ -15,8 +15,11 @@ import { decode } from 'base64-arraybuffer';
 
 
 
-export default function AddCompanyScreen({navigation}){
+export default function AddCompanyScreen({navigation, route}){
     const {user} = useAuth();
+   
+    const entrepriseId = route?.params?.entrepriseId || null;
+    const estModification = entrepriseId !== null;
 
     const [nom, setNom] = useState('');
     const [description, setDescription] = useState('');
@@ -24,7 +27,8 @@ export default function AddCompanyScreen({navigation}){
     const [telephone, setTelephone] = useState('');
     const [siteweb, setSiteweb] = useState('');
     const [logo,setLogo] = useState('');
-    const [typeActivite, setTypeActivite] = useState('service');
+    const [entreprise, setEntreprise] = useState(null);
+    
 
 
     const [villes, setVilles] = useState([]);
@@ -85,6 +89,30 @@ for (let i = 0; i < limited.length; i++) {
            setVilles(villesRes.data);
            setCategories(categoriesRes.data);
 
+           
+           if (estModification) {
+             const { data: entrepriseData, error: entError } = await supabase
+               .from('entreprises')
+               .select('*')
+               .eq('id', entrepriseId)
+               .maybeSingle();
+
+             if (entError) throw entError;
+
+             if (entrepriseData) {
+               setEntreprise(entrepriseData)
+               setNom(entrepriseData.nom || '');
+               setDescription(entrepriseData.description || '');
+               setAdresse(entrepriseData.adresse || '');
+               setTelephone(entrepriseData.telephone || '');
+               setSiteweb(entrepriseData.siteweb || '');
+               setLogo(entrepriseData.logo || '');
+               setLogoUri(entrepriseData.logo || null);
+               setVilleId(entrepriseData.ville_id);
+               setCategorieId(entrepriseData.categorie_id);
+             }
+           }
+
             }catch(error){
          console.error('Erreur chargement données:', error);
          Alert.alert('Erreur', 'Impossible de charger les données');
@@ -129,7 +157,6 @@ for (let i = 0; i < limited.length; i++) {
       const fileExt = uri.split('.').pop();
       const fileName = `${userId}-${Date.now()}.${fileExt}`;
 
-      // Étape 2 : upload vers le bucket "logos"
       const { error: uploadError } = await supabase.storage
         .from('logos')
         .upload(fileName, arrayBuffer, {
@@ -167,12 +194,72 @@ for (let i = 0; i < limited.length; i++) {
   }
 
 
+const notifierAdmin = async (nomEntreprise, nomCategorie, estModif = false) => {
+  try {
+    const { data: dataAdmin, error: errorAdmin } = await supabase
+      .from('utilisateurs')
+      .select('id')
+      .eq('role', 'admin')
+      .limit(1);
+
+    if (errorAdmin || !dataAdmin || dataAdmin.length === 0) {
+      console.log("Pas d'admin trouvé, notification ignorée");
+      return;
+    }
+
+    const titre = estModif
+      ? 'Entreprise modifiée'
+      : 'Nouvelle entreprise en attente';
+
+    const message = estModif
+      ? `"${nomEntreprise}" (${nomCategorie}) a été modifiée par son propriétaire.`
+      : `"${nomEntreprise}" (${nomCategorie}) attend votre validation.`;
+
+    await supabase.from('notifications').insert({
+      utilisateur_id: dataAdmin[0].id,
+      titre,
+      message,
+      lue: false,
+    });
+  } catch (error) {
+    console.error('Erreur de notification admin:', error);
+  }
+};
+
+
    const handleSubmit = async () =>{
     if(!nom || !adresse || !telephone || !villeId || !categorieId ){
       Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
       return;
     }
     setLoading(true);
+
+    let queryPhone = supabase
+    .from('entreprises')
+    .select('id, nom')
+    .eq('telephone', telephone);
+
+    if(estModification){
+      queryPhone = queryPhone.neq('id', entrepriseId);
+    }
+
+    const { data: existingEntreprise, error: phoneCheckError} = 
+    await queryPhone.maybeSingle();
+
+    if(phoneCheckError) {
+      console.error('Erreur vérif téléphone entreprise:', phoneCheckError);
+      Alert.alert('Erreur', 'Impossible de vérifier le numéro. Réessayer');
+      setLoading(false);
+      return;
+    }
+
+    if(existingEntreprise) {
+      Alert.alert( 'Numéro déjà utilisé',
+      `Ce numéro est déjà associé à l'entreprise "${existingEntreprise.nom}". Utilisez un autre numéro.`);
+      setLoading(false);
+      return;
+    }
+    
 
    const coords = await geocodeAddress(adresse);
    const latitude = coords?.latitude || null;
@@ -181,33 +268,76 @@ for (let i = 0; i < limited.length; i++) {
 
     try{
       
-      let logoUrl = null;
-      if (logoUri) {
+      let logoUrl = logo;
+   
+      if (logoUri && (logoUri.startsWith('file://') || logoUri.startsWith('content://'))) {
         logoUrl = await uploadLogo(logoUri, user.id);
       }
 
-      const { error } = await supabase.from('entreprises').insert({
-        nom,
-        description: description || '',
-        adresse,
-        telephone,
-        siteweb: siteweb || '',
-        logo: logoUrl || '', // l'URL publique récupérée après upload
-        ville_id: villeId,
-        categorie_id: categorieId,
-        utilisateur_id: user.id,
-        statutvalidation: 'en_attente',
-        latitude,
-        longitude,
-      });
+const nomCategorie = categories.find(c => c.id === categorieId)?.nom || 'Catégorie inconnue';
 
-      if (error) throw error;
+if (estModification) {
+ 
+  const updateData = {
+    nom,
+    description: description || '',
+    adresse,
+    telephone,
+    siteweb: siteweb || '',
+    logo: logoUrl || '',
+    ville_id: villeId,
+    latitude,
+    longitude,
+    raison_refus: null,
+  
+  };
 
-      Alert.alert(
-        ' Entreprise créée !',
-        'Votre entreprise est en attente de validation par l\'administrateur. Vous serez notifié dès qu\'elle sera validée.',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+  if (entreprise?.statutvalidation === 'refuse') {
+    updateData.statutvalidation = 'en_attente';
+  }
+
+  const { error } = await supabase
+    .from('entreprises')
+    .update(updateData)
+    .eq('id', entrepriseId);
+
+  if (error) throw error;
+
+  await notifierAdmin(nom, nomCategorie, true);
+
+  const message = entreprise?.statutvalidation === 'refuse' ? 'Vos modifications ont été enregistrées. Votre entreprise repasse en attente de validation.' 
+  : 'Vos modifications ont bien été prise en compte .L\'administrateur a été notifié.';
+
+  Alert.alert(
+    'Modifications enregistrées',
+     message,
+    [{ text: 'OK', onPress: () => navigation.goBack() }]
+  );
+} else {
+        const { error } = await supabase.from('entreprises').insert({
+          nom,
+          description: description || '',
+          adresse,
+          telephone,
+          siteweb: siteweb || '',
+          logo: logoUrl || '',
+          ville_id: villeId,
+          categorie_id: categorieId,
+          utilisateur_id: user.id,
+          statutvalidation: 'en_attente',
+          latitude,
+          longitude,
+        });
+
+        if (error) throw error;
+
+        await notifierAdmin(nom, nomCategorie);
+        Alert.alert(
+          ' Entreprise créée !',
+          'Votre entreprise est en attente de validation par l\'administrateur. Vous serez notifié dès qu\'elle sera validée.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      }
 
     }catch(error){
       console.error('Erreur création entreprise:' ,error);
@@ -241,7 +371,7 @@ return(
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Ionicons name='arrow-back' size={24} color='#2c3e50'/>
           </TouchableOpacity>
-           <Text style={styles.title}> Ajouter mon entreprise</Text>
+           <Text style={styles.title}>{estModification ? 'Modifier mon entreprise' : 'Ajouter mon entreprise'}</Text>
          </View>
      {/**Formulaire */}
     <View style={styles.form}>
@@ -368,52 +498,64 @@ return(
     </View>
 
 <View style={styles.inputContainer}>
-    <Text style={styles.label}>Catégorie *</Text>
-    <View style={styles.pickerContainer}>
-        {categories.length === 0 ? (
-        <Text style={styles.emptyText}>Aucune catégorie disponible</Text>
-     ) : (
-        categories.map((cat) => (
-            <TouchableOpacity
+  <Text style={styles.label}>Catégorie *</Text>
+
+  {/* Petite mention expliquant pourquoi c'est bloqué en édition */}
+  {estModification && (
+    <Text style={styles.hint}>
+      La catégorie ne peut plus être modifiée après la création de l'entreprise.
+    </Text>
+  )}
+
+  <View style={styles.pickerContainer}>
+    {categories.length === 0 ? (
+      <Text style={styles.emptyText}>Aucune catégorie disponible</Text>
+    ) : (
+      categories.map((cat) => {
+        const selected = categorieId === cat.id;
+        // En mode édition, aucune catégorie n'est cliquable
+        const disabled = estModification;
+
+        return (
+          <TouchableOpacity
             key={cat.id}
             style={[
-            styles.pickerItem,
-            categorieId === cat.id && styles.pickerItemSelected,
+              styles.pickerItem,
+              selected && styles.pickerItemSelected,
+              disabled && styles.pickerItemDisabled,
             ]}
-             onPress={() => setCategorieId(cat.id)}
+            onPress={() => {
+              if (!disabled) setCategorieId(cat.id);
+            }}
+            disabled={disabled}
+          >
+            <Text
+              style={[
+                styles.pickerItemText,
+                selected && styles.pickerItemTextSelected,
+              ]}
             >
-           <Text
-           style={[
-           styles.pickerItemText,
-           categorieId === cat.id && styles.pickerItemTextSelected,
-             ]}
-           >
-            {cat.icone} {cat.nom}
-           </Text>
-            </TouchableOpacity>
-        ))
+              {cat.icone} {cat.nom}
+            </Text>
+          </TouchableOpacity>
+        );
+      })
     )}
-    </View>
-    </View>
+  </View>
+</View>
       <TouchableOpacity
             style={styles.submitButton}
             onPress={handleSubmit}
             disabled={loading}
           >
             <Text style={styles.submitButtonText}>
-              {loading ? 'Création en cours...' : ' Créer mon entreprise'}
+              {loading
+                ? (estModification ? 'Mise à jour...' : 'Création en cours...')
+                : (estModification ? 'Enregistrer les modifications' : ' Créer mon entreprise')}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.viewLink}
-            onPress={() => navigation.navigate('MesEntreprises')}
-          >
-            <Text style={styles.viewLinkText}>
-              Voir mes entreprises existantes
-            </Text>
-          </TouchableOpacity>
- 
+        
 
     </View>
     </ScrollView>
@@ -423,6 +565,9 @@ return(
 }
 
 const styles = StyleSheet.create({
+  pickerItemDisabled: {
+  opacity: 0.5,
+},
  container: {
     flex: 1,
     backgroundColor: '#f5f5f5',

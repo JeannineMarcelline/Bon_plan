@@ -105,12 +105,14 @@ export default function ClientOrderDetail({ navigation, route }) {
   const formatDate = (dateString) => {
     if (!dateString) return 'Date inconnue';
     const date = new Date(dateString);
-    return date.toLocaleDateString('fr-FR', {
+
+    return date.toLocaleString('fr-FR', {
       day: '2-digit',
       month: 'long',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+     timeZone: 'Indian/Antananarivo',
     });
   };
 

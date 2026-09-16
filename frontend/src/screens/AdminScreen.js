@@ -171,11 +171,7 @@ export default function AdminScreen({ navigation }) {
           >
             <Ionicons name="business-outline" size={22} color="#2563EB" />
             <Text style={styles.menuItemText}>Gérer les entreprises</Text>
-            {entreprisesEnAttente > 0 && (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{entreprisesEnAttente}</Text>
-              </View>
-            )}
+            
             <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
           </TouchableOpacity>
 

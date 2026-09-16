@@ -1,5 +1,6 @@
 // screens/ProfileScreen.js
-import React, { useEffect, useState } from 'react';
+// screens/ProfileScreen.js
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -47,11 +48,10 @@ export default function ProfileScreen() {
   };
 
   useFocusEffect(
-    React.useCallback(() => {
-      loadEntreprise();
-     
-    }, [])
-  );
+  useCallback(() => {
+    loadEntreprise();
+  }, [])
+);
 
 
   const handleLogout = () => {
@@ -71,6 +71,7 @@ export default function ProfileScreen() {
     if (role === 'admin') return 'Administrateur';
     return 'Client';
   };
+
 
   const getStatutLabel = (statut) => {
     if (statut === 'valide') return ' Validée';
@@ -156,9 +157,7 @@ export default function ProfileScreen() {
             ) : entreprise ? (
               <>
                 <Text style={styles.entrepriseNom}>{entreprise.nom}</Text>
-                <Text style={styles.entrepriseStatut}>
-                  Statut : {getStatutLabel(entreprise.statutvalidation)}
-                </Text>
+                
                 {entreprise.statutvalidation === 'valide' && (
                   <>
                     <TouchableOpacity
@@ -169,39 +168,70 @@ export default function ProfileScreen() {
                     </TouchableOpacity>
                   </>
                 )}
-                {entreprise.statutvalidation === 'en_attente' && (
-                  <View style={styles.pendingBox}>
-                    <Text style={styles.pendingText}> En attente de validation</Text>
-                  </View>
-                )}
-                {entreprise.statutvalidation === 'refuse' && (
-                  <View style={styles.refusedBox}>
-                    <Text style={styles.refusedText}> Refusée</Text>
-                  </View>
-                )}
+               {entreprise.statutvalidation === 'en_attente' && (
+  <View style={styles.pendingBox}>
+    <Text style={styles.pendingText}> En attente de validation</Text>
+    <Text style={styles.pendingHint}>
+      Vous pouvez encore modifier votre entreprise en attendant la validation.
+    </Text>
+    <TouchableOpacity
+      style={styles.editOutlineButton}
+      onPress={() =>
+        navigation.navigate('Accueil', {
+          screen: 'AddCompany',
+          params: { entrepriseId: entreprise.id },
+        })
+      }
+    >
+      <Ionicons name="create-outline" size={16} color="#856404" />
+      <Text style={styles.editOutlineButtonText}>Modifier mon entreprise</Text>
+    </TouchableOpacity>
+  </View>
+)}
+        
+              {entreprise.statutvalidation === 'refuse' && (
+  <View style={styles.refusedBox}>
+    <View style={styles.refusedHeader}>
+      <Ionicons name="close-circle" size={18} color="#991B1B" />
+      <Text style={styles.refusedTitle}>Entreprise refusée</Text>
+    </View>
+    {entreprise.raison_refus ? (
+      <Text style={styles.refusedReason}>
+        Raison : {entreprise.raison_refus}
+      </Text>
+    ) : null}
+    <TouchableOpacity
+      style={styles.editOutlineButtonRefused}
+      onPress={() =>
+        navigation.navigate('Accueil', {
+          screen: 'AddCompany',
+          params: { entrepriseId: entreprise.id },
+        })
+      }
+    >
+      <Ionicons name="create-outline" size={16} color="#991B1B" />
+      <Text style={styles.editOutlineButtonRefusedText}>
+        Corriger et renvoyer
+      </Text>
+      <Ionicons name="chevron-forward" size={16} color="#991B1B" />
+    </TouchableOpacity>
+  </View>
+)}
               </>
             ) : (
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => navigation.navigate('Accueil', { screen: 'AddCompany' })}
-              >
-                <Text style={styles.secondaryButtonText}>➕ Ajouter mon entreprise</Text>
-              </TouchableOpacity>
-            )}
+    <TouchableOpacity
+    style={styles.addCompanyButton}
+    onPress={() => navigation.navigate('Accueil', { screen: 'AddCompany' })}
+    activeOpacity={0.85}
+  >
+    <Ionicons name="add-circle-outline" size={20} color="#fff" />
+    <Text style={styles.addCompanyButtonText}>Ajouter mon entreprise</Text>
+  </TouchableOpacity>
+)}
           </View>
         )}
 
-        
-        {user?.role === 'admin' && (
-          <TouchableOpacity
-            style={styles.adminButton}
-            onPress={() => navigation.navigate('AdminDashbord')}
-          >
-            <Ionicons name="shield-outline" size={22} color="#fff" />
-            <Text style={styles.adminButtonText}>🛡️ Administration</Text>
-          </TouchableOpacity>
-        )}
-
+      
        
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color="#DC3545" />
@@ -411,15 +441,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
-  secondaryButton: {
-    backgroundColor: '#E9ECEF',
-    marginTop: 8,
-  },
-  secondaryButtonText: {
-    color: '#1E3A5F',
-    fontWeight: '600',
-    fontSize: 14,
-  },
+ addCompanyButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  backgroundColor:'#151556',
+  borderRadius: 12,
+  paddingVertical: 14,
+  paddingHorizontal: 16,
+  marginTop: 12,
+  // Ombre légère pour donner du relief
+  shadowColor: '#2563EB',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.2,
+  shadowRadius: 4,
+  elevation: 3,
+},
+addCompanyButtonText: {
+  color: '#fff',
+  fontSize: 15,
+  fontWeight: '600',
+},
   pendingBox: {
     backgroundColor: '#FFF3CD',
     borderRadius: 8,
@@ -447,7 +490,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
 
-
   adminButton: {
     flexDirection: 'row',
     backgroundColor: '#111827',
@@ -463,7 +505,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-
 
   logoutButton: {
     flexDirection: 'row',
@@ -483,7 +524,85 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+// ---------- Boîte "En attente" ----------
+pendingBox: {
+  backgroundColor: '#FFF3CD',
+  borderRadius: 10,
+  padding: 14,
+  marginTop: 8,
+},
+pendingText: {
+  color: '#856404',
+  fontSize: 14,
+  fontWeight: '600',
+},
+pendingHint: {
+  color: '#856404',
+  fontSize: 12,
+  marginTop: 4,
+  opacity: 0.8,
+},
+editOutlineButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginTop: 10,
+  paddingVertical: 8,
+  paddingHorizontal: 12,
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#856404',
+  alignSelf: 'flex-start',
+},
+editOutlineButtonText: {
+  color: '#856404',
+  fontSize: 13,
+  fontWeight: '600',
+},
 
+// ---------- Boîte "Refusée" ----------
+refusedBox: {
+  backgroundColor: '#FEE2E2',
+  borderRadius: 10,
+  padding: 14,
+  marginTop: 8,
+},
+refusedHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginBottom: 4,
+},
+refusedTitle: {
+  color: '#991B1B',
+  fontSize: 14,
+  fontWeight: '700',
+},
+refusedReason: {
+  color: '#991B1B',
+  fontSize: 13,
+  lineHeight: 18,
+  marginTop: 2,
+  fontStyle: 'italic',
+},
+editOutlineButtonRefused: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginTop: 12,
+  paddingVertical: 8,
+  paddingHorizontal: 12,
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#991B1B',
+  alignSelf: 'flex-start',
+},
+editOutlineButtonRefusedText: {
+  color: '#991B1B',
+  fontSize: 13,
+  fontWeight: '600',
+  flex: 1,
+},
   version: {
     textAlign: 'center',
     marginTop: 20,

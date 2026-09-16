@@ -26,7 +26,7 @@ export default function ProDashbordScreen({ navigation }) {
    commandes: 0, 
    enAttente: 0,
   });
-  // Vocabulaire par défaut en attendant de connaître la catégorie
+  
   const [mots, setMots] = useState(getConfigCategorie(null).vocabulaire);
 
   const loadData = async () => {
@@ -44,7 +44,7 @@ if (entrepriseData) {
 
   const categorieNom = entrepriseData.categories?.nom;
 
-//==== Transport === 
+
   if(categorieNom === 'Transport') {
 
   const { count: nbVehicules } = await supabase
@@ -80,10 +80,10 @@ if (entrepriseData) {
     commandes: 0,
     enAttente: nbEnAttente,
   });
- //==== produit=====
+
 }else{
 
-  // Vocabulaire adapté à la catégorie de cette entreprise (produit/chambre/poste...)
+  
   const config = getConfigCategorie(categorieNom || null);
   setMots(config.vocabulaire);
 
@@ -92,7 +92,7 @@ if (entrepriseData) {
   .select('*', { count : 'exact' , head: true})
   .eq('id_entreprise', entrepriseData.id);
 
-  // Correction : le nom de la table est "commande" (singulier), pas "commandes"
+ 
   const {count :  nbCommandes} = await supabase
   .from('commande')
   .select('*', { count : 'exact', head: true})
@@ -245,9 +245,48 @@ return null;
 
         
 
+     {entreprise.statutvalidation === 'en_attente' && (
+      <View style={styles.infoCard}>
+       <Ionicons name="time-outline" size={22} color="#D97706" />
+       <Text style={styles.infoCardText}>
+ Votre entreprise est en cours de validation par l'administrateur. La gestion sera disponible une fois validée.
+       </Text>
+      </View>
+     )}
+
+     {entreprise.statutvalidation !== 'valide' && entreprise.statutvalidation !== 'en_attente' &&(
+      <View style={[styles.infoCard, styles.infoCardRefus]}>
+   <Ionicons name="close-circle-outline" size={22} color="#DC2626" />
+     <View style={{ flex: 1}}>
+    <Text style={styles.infoCardText}>
+                   Votre entreprise a été refusée{entreprise.raison_refus ? ` : ${entreprise.raison_refus}` : '.'}
+      </Text>
+      <TouchableOpacity
+      style={styles.editButton}
+      onPress={() => navigation.navigate('AddCompany', {entrepriseId: entreprise.id})}
+      >
+
+                <Ionicons name="create-outline" size={16} color="#fff" />
+                <Text style={styles.editButtonText}>Modifier mon entreprise</Text>
+      </TouchableOpacity>
+     </View>
+      </View>
+     )}
+
+ {entreprise.statutvalidation === 'valide' && (
+        <>
         {/* Menu des actions */}
         <View style={styles.menuSection}>
-          <Text style={styles.sectionTitle}>Gestion</Text>
+          <View style={styles.menuSectionHeader}>
+            <Text style={styles.sectionTitle}>Gestion</Text>
+            {/* MODIFIÉ : petit bouton crayon pour modifier l'entreprise
+                même quand tout va bien (pas seulement en cas de refus) */}
+            <TouchableOpacity
+              onPress={() => navigation.navigate('AddCompany', { entrepriseId: entreprise.id })}
+            >
+              <Ionicons name="create-outline" size={20} color="#2563EB" />
+            </TouchableOpacity>
+          </View>
 
       {entreprise.categories?.nom == 'Transport' ? (
          <>
@@ -359,6 +398,9 @@ return null;
       )}
 
         </View>
+        </>
+        )}
+       
         {/* Version */}
         <Text style={styles.version}>Bon Plan Madagascar v1.0</Text>
       </ScrollView>
@@ -444,7 +486,31 @@ const styles = StyleSheet.create({
   statNumber: { fontSize: 18, fontWeight: 'bold', color: '#111827', letterSpacing: -0.5 },
   statLabel: { fontSize: 11, color: '#6B7280', marginTop: 1, fontWeight: '500' },
   menuSection: { backgroundColor: '#fff', borderRadius: 12, padding: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50', marginBottom: 12 },
+  menuSectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50', marginBottom: 0 },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  infoCardRefus: { backgroundColor: '#FEE2E2' },
+  infoCardText: { flex: 1, fontSize: 14, color: '#374151', lineHeight: 20 },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#DC2626',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginTop: 10,
+    alignSelf: 'flex-start',
+  },
+  editButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   lastMenuItem: { borderBottomWidth: 0 },
   menuItemText: { flex: 1, fontSize: 16, color: '#2c3e50', marginLeft: 12 },
