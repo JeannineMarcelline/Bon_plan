@@ -21,7 +21,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { getConfigCategorie } from '../../Config/categorieConfig';
 
-const Max_photo = 3;
+const Max_photo = 1;
 
 export default function AddProduit ({navigation, route}) {
 
@@ -36,8 +36,8 @@ const [stock, setStock] = useState('')
 const [photos_produit, setPhotos_produit] = useState([]);
 const [upLoading, setUpLoading] = useState(false);
 const [chargementInitial, setChargementInitial] = useState(true);
-const [caracteristiques, setCaracteristique] = useState('');
-// Vocabulaire de l'entreprise du pro connecté (chambre, poste, produit...)
+
+
 const [mots, setMots] = useState(getConfigCategorie(null).vocabulaire);
 const [entrepriseId, setEntrepriseId] = useState(null);
 
@@ -47,8 +47,7 @@ useEffect(() => {
 
 const initialiser = async () => {
   try {
-    // On récupère toujours la catégorie de l'entreprise, qu'on soit
-    // en train d'ajouter ou de modifier, pour adapter le vocabulaire.
+    
     const { data: entreprise, error: entrepriseError } = await supabase
       .from('entreprises')
       .select('id, categories ( nom )')
@@ -90,10 +89,6 @@ const chargerProduitExistant = async () => {
       setStock(data.stock?.toString() || '');
       setPhotos_produit(data.photos_produit || []);
 
-      if(data.caracteristiques){
-        const texte = Object.values(data.caracteristiques).join(', ');
-        setCaracteristique(texte);
-      }
     }
 
   } catch (error) {
@@ -127,7 +122,7 @@ const pickImage = async () => {
   });
 
   if (!result.canceled) {
-    setPhotos_produit([...photos_produit, result.assets[0].uri]);
+    setPhotos_produit([result.assets[0].uri]);
   }
 };
 
@@ -189,14 +184,7 @@ if(url) photoUrls.push(url);
 }
 }
 
-const caracteristiquesJson = caracteristiques
-.split(',')
-.map(item => item.trim())
-.filter(item => item.length > 0)
-.reduce((obj, item, index) => {
-  obj[`detail_${index + 1}`] = item;
-  return obj;
-}, {});
+
 
 const donneesProduit = {
   nom_produit,
@@ -204,7 +192,7 @@ const donneesProduit = {
   prix_produit: parseFloat(prix_produit),
   stock: parseInt(stock),
   photos_produit: photoUrls.length > 0 ? photoUrls : photos_produit, // garde les anciennes photos si pas de nouvelles
-  caracteristiques: caracteristiquesJson,
+  
 };
 
 if (estModification) {
@@ -282,7 +270,7 @@ const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Description</Text>
+              <Text style={styles.label}>{mots.description}</Text>
               <TextInput
                 style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
                 placeholder="Décrivez ce que vous proposez..."
@@ -292,50 +280,42 @@ const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
               />
             </View>
 
-             <View style={styles.inputGroup}>
-             <Text style={styles.label}>Caractéristiques</Text>
-            <TextInput
-              style={[styles.input, { height: 60 }]}
-              placeholder="Ex: 2 personnes, wifi, climatisation"
-             value={caracteristiques}
-             onChangeText={setCaracteristique}
-             />
-  <Text style={styles.helperText}>
-    Séparez chaque caractéristique par une virgule
-  </Text>
-</View>
 
             <View style={styles.row}>
               <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={styles.label}>Prix (Ar) *</Text>
+                <Text style={styles.label}>{mots.prix}</Text>
                 <TextInput style={styles.input} placeholder="5000" keyboardType="numeric" value={prix_produit} onChangeText={setPrix_produit} />
               </View>
               <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={styles.label}>Stock disponible *</Text>
+                <Text style={styles.label}>{mots.stock}</Text>
                 <TextInput style={styles.input} placeholder="20" keyboardType="numeric" value={stock} onChangeText={setStock} />
               </View>
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Photos ({photos_produit.length}/{Max_photo})</Text>
+  <Text style={styles.label}>Photo</Text>
 
-              {photos_produit.length < Max_photo && (
-                <TouchableOpacity style={styles.photoButton} onPress={pickImage}>
-                  <Text style={styles.photoButtonText}>📷 Ajouter une photo</Text>
-                </TouchableOpacity>
-              )}
+  {photos_produit.length === 0 ? (
+   
+    <TouchableOpacity style={styles.photoButton} onPress={pickImage}>
+      <Text style={styles.photoButtonText}>📷 Choisir une photo</Text>
+    </TouchableOpacity>
+  ) : (
+  
+    <View style={styles.photoPreviewWrap}>
+      <Image source={{ uri: photos_produit[0] }} style={styles.photoPreview} />
+      <TouchableOpacity style={styles.removePhotoBtn} onPress={() => removePhoto(0)}>
+        <Ionicons name="close-circle" size={22} color="#DC2626" />
+      </TouchableOpacity>
+    </View>
+  )}
 
-              <View style={styles.photosRow}>
-                {photos_produit.map((uri, index) => (
-                  <View key={index} style={styles.photoPreviewWrap}>
-                    <Image source={{ uri }} style={styles.photoPreview} />
-                    <TouchableOpacity style={styles.removePhotoBtn} onPress={() => removePhoto(index)}>
-                      <Ionicons name="close-circle" size={22} color="#DC2626" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            </View>
+  {photos_produit.length > 0 && (
+    <TouchableOpacity style={styles.changePhotoButton} onPress={pickImage}>
+      <Text style={styles.changePhotoButtonText}>Changer la photo</Text>
+    </TouchableOpacity>
+  )}
+</View>
 
             <TouchableOpacity
               style={[styles.submitButton, upLoading && { opacity: 0.6 }]}
@@ -392,6 +372,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   photoButtonText: { fontSize: 14, color: '#1E3A5F' },
+  changePhotoButton: {
+  marginTop: 8,
+  paddingVertical: 8,
+  alignItems: 'center',
+},
+changePhotoButtonText: {
+  fontSize: 13,
+  color: '#2563EB',
+  fontWeight: '500',
+},
   photosRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   photoPreviewWrap: { position: 'relative' },
   photoPreview: { width: 90, height: 90, borderRadius: 8 },

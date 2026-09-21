@@ -1,5 +1,4 @@
 // screens/ProfileScreen.js
-// screens/ProfileScreen.js
 import React, { useCallback, useState } from 'react';
 import {
   View,
@@ -8,12 +7,12 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 
 export default function ProfileScreen() {
@@ -22,10 +21,20 @@ export default function ProfileScreen() {
   const [entreprise, setEntreprise] = useState(null);
   const [loadingEntreprise, setLoadingEntreprise] = useState(true);
 
+  // Toggles visuels (à brancher plus tard sur la vraie logique)
+  const [notifActive, setNotifActive] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
 
+  // Raccourcis de rôle pour lisibilité
+  const isPro = user?.role === 'pro';
+  const isAdmin = user?.role === 'admin';
+  const isClient = !isPro && !isAdmin;
 
+  // ============================================================
+  // CHARGEMENT ENTREPRISE (pro)
+  // ============================================================
   const loadEntreprise = async () => {
-    if (user?.role !== 'pro') {
+    if (!isPro) {
       setLoadingEntreprise(false);
       return;
     }
@@ -37,9 +46,7 @@ export default function ProfileScreen() {
         .maybeSingle();
 
       if (error) throw error;
-      if (data) {
-        setEntreprise(data);
-      }
+      if (data) setEntreprise(data);
     } catch (error) {
       console.error('Erreur de chargement de entreprise:', error);
     } finally {
@@ -48,194 +55,437 @@ export default function ProfileScreen() {
   };
 
   useFocusEffect(
-  useCallback(() => {
-    loadEntreprise();
-  }, [])
-);
+    useCallback(() => {
+      loadEntreprise();
+    }, [])
+  );
 
-
+  // ============================================================
+  // DÉCONNEXION
+  // ============================================================
   const handleLogout = () => {
     Alert.alert(
       'Déconnexion',
       'Voulez-vous vraiment vous déconnecter ?',
       [
         { text: 'Annuler', style: 'cancel' },
-        { text: 'Se déconnecter', style: 'destructive', onPress: async () => { await logout(); } },
+        {
+          text: 'Se déconnecter',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+          },
+        },
       ]
     );
   };
 
-
-  const getRoleLabel = (role) => {
-    if (role === 'pro') return 'Professionnel';
-    if (role === 'admin') return 'Administrateur';
-    return 'Client';
-  };
-
-
-  const getStatutLabel = (statut) => {
-    if (statut === 'valide') return ' Validée';
-    if (statut === 'refuse') return ' Refusée';
-    return ' En attente';
-  };
-
-
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
- 
-        <View style={styles.header}>
-          <View style={styles.avatarContainer}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ============================================================
+            EN-TÊTE (commun à tous les rôles)
+            ============================================================ */}
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarWrapper}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
                 {user?.nom?.charAt(0)?.toUpperCase() || '?'}
               </Text>
             </View>
-            <Text style={styles.userName}>{user?.nom || 'Utilisateur'}</Text>
-            <Text style={styles.userRole}>{getRoleLabel(user?.role)}</Text>
+
+            <TouchableOpacity
+              style={styles.avatarEditBadge}
+              onPress={() =>
+                Alert.alert(
+                  'Changer la photo',
+                  'Cette fonctionnalité arrive bientôt.'
+                )
+              }
+            >
+              <Ionicons name="pencil" size={14} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.userName}>{user?.nom || 'Utilisateur'}</Text>
+
+          <View style={styles.userContact}>
+            <Text style={styles.userContactText}>
+              {user?.email || 'Email non défini'}
+            </Text>
+            <Text style={styles.userContactSeparator}>|</Text>
+            <Text style={styles.userContactText}>
+              {user?.telephone || 'Téléphone non défini'}
+            </Text>
           </View>
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.infoItem}>
-            <Ionicons name="person-outline" size={20} color="#1E3A5F" />
-            <View>
-              <Text style={styles.infoLabel}>Nom</Text>
-              <Text style={styles.infoValue}>{user?.nom || 'Non défini'}</Text>
+        {/* ============================================================
+            SECTION "MON ESPACE" — visible pour client et pro
+            ============================================================ */}
+        {(isClient || isPro) && (
+          <>
+            <Text style={styles.sectionTitle}>Mon espace</Text>
+
+            <View style={styles.menu}>
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() =>
+                  navigation.navigate('Accueil', { screen: 'ClientOrders' })
+                }
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[styles.menuItemIcon, { backgroundColor: '#EFF6FF' }]}
+                >
+                  <Ionicons name="cube-outline" size={18} color="#2563EB" />
+                </View>
+                <Text style={styles.menuItemText}>Mes commandes</Text>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() =>
+                  navigation.navigate('Accueil', { screen: 'MesReservations' })
+                }
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[styles.menuItemIcon, { backgroundColor: '#F5F3FF' }]}
+                >
+                  <Ionicons name="bus-outline" size={18} color="#7C3AED" />
+                </View>
+                <Text style={styles.menuItemText}>Mes réservations</Text>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.menuItem, styles.menuItemLast]}
+                onPress={() => navigation.navigate('Favoris')}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[styles.menuItemIcon, { backgroundColor: '#FEF2F2' }]}
+                >
+                  <Ionicons name="heart-outline" size={18} color="#DC2626" />
+                </View>
+                <Text style={styles.menuItemText}>Mes favoris</Text>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
             </View>
-          </View>
-          <View style={styles.infoItem}>
-            <Ionicons name="mail-outline" size={20} color="#1E3A5F" />
-            <View>
-              <Text style={styles.infoLabel}>Email</Text>
-              <Text style={styles.infoValue}>{user?.email || 'Non défini'}</Text>
-            </View>
-          </View>
-          <View style={styles.infoItem}>
-            <Ionicons name="call-outline" size={20} color="#1E3A5F" />
-            <View>
-              <Text style={styles.infoLabel}>Téléphone</Text>
-              <Text style={styles.infoValue}>{user?.telephone || 'Non défini'}</Text>
-            </View>
-          </View>
-        </View>
-
-        
-        <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={styles.quickButton}
-            onPress={() => navigation.navigate('Accueil', { screen: 'ClientOrders' })}
-          >
-            <Ionicons name="cube-outline" size={22} color="#2563EB" />
-            <Text style={styles.quickButtonText}>Commandes</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickButton}
-            onPress={() => navigation.navigate('Accueil', { screen: 'MesReservations' })}
-          >
-            <Ionicons name="bus-outline" size={22} color="#7C3AED" />
-            <Text style={styles.quickButtonText}>Réservations</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.quickButton}
-            onPress={() => navigation.navigate('Favoris')}
-          >
-            <Ionicons name="heart-outline" size={22} color="#DC2626" />
-            <Text style={styles.quickButtonText}>Favoris</Text>
-          </TouchableOpacity>
-        </View>
-
-       
-
-        {user?.role === 'pro' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>🏢 Mon entreprise</Text>
-            {loadingEntreprise ? (
-              <Text style={styles.loadingText}>Chargement...</Text>
-            ) : entreprise ? (
-              <>
-                <Text style={styles.entrepriseNom}>{entreprise.nom}</Text>
-                
-                {entreprise.statutvalidation === 'valide' && (
-                  <>
-                    <TouchableOpacity
-                      style={styles.primaryButton}
-                      onPress={() => navigation.navigate('Accueil', { screen: 'ProDashbord' })}
-                    >
-                      <Text style={styles.primaryButtonText}> Dashboard Pro</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-               {entreprise.statutvalidation === 'en_attente' && (
-  <View style={styles.pendingBox}>
-    <Text style={styles.pendingText}> En attente de validation</Text>
-    <Text style={styles.pendingHint}>
-      Vous pouvez encore modifier votre entreprise en attendant la validation.
-    </Text>
-    <TouchableOpacity
-      style={styles.editOutlineButton}
-      onPress={() =>
-        navigation.navigate('Accueil', {
-          screen: 'AddCompany',
-          params: { entrepriseId: entreprise.id },
-        })
-      }
-    >
-      <Ionicons name="create-outline" size={16} color="#856404" />
-      <Text style={styles.editOutlineButtonText}>Modifier mon entreprise</Text>
-    </TouchableOpacity>
-  </View>
-)}
-        
-              {entreprise.statutvalidation === 'refuse' && (
-  <View style={styles.refusedBox}>
-    <View style={styles.refusedHeader}>
-      <Ionicons name="close-circle" size={18} color="#991B1B" />
-      <Text style={styles.refusedTitle}>Entreprise refusée</Text>
-    </View>
-    {entreprise.raison_refus ? (
-      <Text style={styles.refusedReason}>
-        Raison : {entreprise.raison_refus}
-      </Text>
-    ) : null}
-    <TouchableOpacity
-      style={styles.editOutlineButtonRefused}
-      onPress={() =>
-        navigation.navigate('Accueil', {
-          screen: 'AddCompany',
-          params: { entrepriseId: entreprise.id },
-        })
-      }
-    >
-      <Ionicons name="create-outline" size={16} color="#991B1B" />
-      <Text style={styles.editOutlineButtonRefusedText}>
-        Corriger et renvoyer
-      </Text>
-      <Ionicons name="chevron-forward" size={16} color="#991B1B" />
-    </TouchableOpacity>
-  </View>
-)}
-              </>
-            ) : (
-    <TouchableOpacity
-    style={styles.addCompanyButton}
-    onPress={() => navigation.navigate('Accueil', { screen: 'AddCompany' })}
-    activeOpacity={0.85}
-  >
-    <Ionicons name="add-circle-outline" size={20} color="#fff" />
-    <Text style={styles.addCompanyButtonText}>Ajouter mon entreprise</Text>
-  </TouchableOpacity>
-)}
-          </View>
+          </>
         )}
 
-      
-       
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={20} color="#DC3545" />
-          <Text style={styles.logoutButtonText}>Se déconnecter</Text>
+        {/* ============================================================
+            SECTION "MON ENTREPRISE" — visible uniquement pour les pros
+            ============================================================ */}
+        {isPro && (
+          <>
+            <Text style={styles.sectionTitle}>Mon entreprise</Text>
+
+            {loadingEntreprise ? (
+              <View style={styles.menu}>
+                <View style={styles.menuItem}>
+                  <View
+                    style={[styles.menuItemIcon, { backgroundColor: '#F3F4F6' }]}
+                  >
+                    <Ionicons
+                      name="business-outline"
+                      size={18}
+                      color="#4B5563"
+                    />
+                  </View>
+                  <Text style={styles.loadingText}>Chargement...</Text>
+                </View>
+              </View>
+            ) : entreprise ? (
+              <View style={styles.entrepriseCard}>
+                {/* En-tête de la carte entreprise */}
+                <View style={styles.entrepriseHeader}>
+                  <View style={styles.entrepriseIconWrapper}>
+                    <Ionicons
+                      name="business"
+                      size={22}
+                      color="#1E3A5F"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.entrepriseNom}>{entreprise.nom}</Text>
+                    <Text style={styles.entrepriseStatutLabel}>
+                      {entreprise.statutvalidation === 'valide'
+                        ? 'Validée'
+                        : entreprise.statutvalidation === 'refuse'
+                        ? 'Refusée'
+                        : 'En attente de validation'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Actions selon statut */}
+    {entreprise.statutvalidation === 'valide' && (
+  <TouchableOpacity
+    style={styles.entrepriseAction}
+    onPress={() =>
+      navigation.navigate('Accueil', {
+        screen: 'ProDashbord',
+      })
+    }
+    activeOpacity={0.7}
+  >
+    <View
+      style={[styles.menuItemIcon, { backgroundColor: '#EFF6FF' }]}
+    >
+      <Ionicons
+        name="stats-chart-outline"
+        size={18}
+        color="#2563EB"
+      />
+    </View>
+    <Text style={styles.entrepriseActionText}>
+      Accéder au Dashboard Pro
+    </Text>
+    <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+  </TouchableOpacity>
+)}
+
+                {entreprise.statutvalidation === 'en_attente' && (
+                  <View style={styles.statusBox}>
+                    <View style={styles.statusBoxHeader}>
+                      <Ionicons name="time-outline" size={16} color="#856404" />
+                      <Text style={styles.statusBoxTitle}>
+                        En attente de validation
+                      </Text>
+                    </View>
+                    <Text style={styles.statusBoxHint}>
+                      Vous pouvez encore modifier votre entreprise en attendant
+                      la validation.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.outlineButton}
+                      onPress={() =>
+                        navigation.navigate('Accueil', {
+                          screen: 'AddCompany',
+                          params: { entrepriseId: entreprise.id },
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="create-outline"
+                        size={16}
+                        color="#856404"
+                      />
+                      <Text style={styles.outlineButtonText}>
+                        Modifier mon entreprise
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {entreprise.statutvalidation === 'refuse' && (
+                  <View style={[styles.statusBox, styles.statusBoxRefused]}>
+                    <View style={styles.statusBoxHeader}>
+                      <Ionicons
+                        name="close-circle-outline"
+                        size={16}
+                        color="#991B1B"
+                      />
+                      <Text
+                        style={[styles.statusBoxTitle, { color: '#991B1B' }]}
+                      >
+                        Entreprise refusée
+                      </Text>
+                    </View>
+                    {entreprise.raison_refus ? (
+                      <Text style={styles.statusBoxReason}>
+                        Raison : {entreprise.raison_refus}
+                      </Text>
+                    ) : null}
+                    <TouchableOpacity
+                      style={[styles.outlineButton, styles.outlineButtonRefused]}
+                      onPress={() =>
+                        navigation.navigate('Accueil', {
+                          screen: 'AddCompany',
+                          params: { entrepriseId: entreprise.id },
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="create-outline"
+                        size={16}
+                        color="#991B1B"
+                      />
+                      <Text
+                        style={[styles.outlineButtonText, { color: '#991B1B' }]}
+                      >
+                        Corriger et renvoyer
+                      </Text>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={16}
+                        color="#991B1B"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.menu}>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() =>
+                    navigation.navigate('Accueil', { screen: 'AddCompany' })
+                  }
+                  activeOpacity={0.7}
+                >
+                  <View
+                    style={[styles.menuItemIcon, { backgroundColor: '#EFF6FF' }]}
+                  >
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={18}
+                      color="#2563EB"
+                    />
+                  </View>
+                  <Text style={styles.menuItemText}>
+                    Ajouter mon entreprise
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color="#9CA3AF"
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ============================================================
+            SECTION "ADMINISTRATION" — visible uniquement pour l'admin
+            ============================================================ */}
+        {isAdmin && (
+          <>
+            <Text style={styles.sectionTitle}>Administration</Text>
+
+            <View style={styles.menu}>
+              <TouchableOpacity
+                style={[styles.menuItem, styles.menuItemLast]}
+                onPress={() => navigation.navigate('admin')}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[styles.menuItemIcon, { backgroundColor: '#FEF3C7' }]}
+                >
+                  <Ionicons name="settings-outline" size={18} color="#D97706" />
+                </View>
+                <Text style={styles.menuItemText}>
+                  Accéder à l'administration
+                </Text>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
+        {/* ============================================================
+            SECTION "MON COMPTE" — visible pour tous les rôles
+            ============================================================ */}
+        <Text style={styles.sectionTitle}>Mon compte</Text>
+
+        <View style={styles.menu}>
+          {/* Modifier mon profil */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() =>
+            navigation.navigate('Accueil', { screen: 'EditProfile' })
+            }
+            activeOpacity={0.7}
+          >
+            <View
+              style={[styles.menuItemIcon, { backgroundColor: '#F3F4F6' }]}
+            >
+              <Ionicons name="person-outline" size={18} color="#4B5563" />
+            </View>
+            <Text style={styles.menuItemText}>Modifier mon profil</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          {/* Changer mot de passe */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() =>
+            navigation.navigate('Accueil', { screen: 'ChangePassword' })
+            }
+            activeOpacity={0.7}
+          >
+            <View
+              style={[styles.menuItemIcon, { backgroundColor: '#F3F4F6' }]}
+            >
+              <Ionicons
+                name="lock-closed-outline"
+                size={18}
+                color="#4B5563"
+              />
+            </View>
+            <Text style={styles.menuItemText}>Changer mot de passe</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          {/* Notifications */}
+          <View style={styles.menuItem}>
+            <View
+              style={[styles.menuItemIcon, { backgroundColor: '#F3F4F6' }]}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={18}
+                color="#4B5563"
+              />
+            </View>
+            <Text style={styles.menuItemText}>Notifications</Text>
+            <Switch
+              value={notifActive}
+              onValueChange={setNotifActive}
+              trackColor={{ false: '#D1D5DB', true: '#2563EB' }}
+              thumbColor="#fff"
+              ios_backgroundColor="#D1D5DB"
+            />
+          </View>
+
+          {/* Mode sombre */}
+          <View style={[styles.menuItem, styles.menuItemLast]}>
+            <View
+              style={[styles.menuItemIcon, { backgroundColor: '#F3F4F6' }]}
+            >
+              <Ionicons name="moon-outline" size={18} color="#4B5563" />
+            </View>
+            <Text style={styles.menuItemText}>Mode sombre</Text>
+            <Switch
+              value={darkMode}
+              onValueChange={setDarkMode}
+              trackColor={{ false: '#D1D5DB', true: '#2563EB' }}
+              thumbColor="#fff"
+              ios_backgroundColor="#D1D5DB"
+            />
+          </View>
+        </View>
+
+        {/* ============================================================
+            DÉCONNEXION
+            ============================================================ */}
+        <TouchableOpacity
+          style={styles.logoutLink}
+          onPress={handleLogout}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="log-out-outline" size={16} color="#9CA3AF" />
+          <Text style={styles.logoutLinkText}>Se déconnecter</Text>
         </TouchableOpacity>
 
         <Text style={styles.version}>Bon Plan Madagascar v1.0</Text>
@@ -244,369 +494,239 @@ export default function ProfileScreen() {
   );
 }
 
-
-
+// ============================================================
+// STYLES
+// ============================================================
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
+  container: { flex: 1, backgroundColor: '#F5F6FA' },
+  scrollContent: { padding: 16, paddingTop: 24, paddingBottom: 40 },
 
-
-  header: {
+  // ---------- EN-TÊTE ----------
+  profileHeader: {
     alignItems: 'center',
-    marginBottom: 24,
+    paddingHorizontal: 20,
+    marginBottom: 16,
   },
-  avatarContainer: {
-    alignItems: 'center',
+  avatarWrapper: {
+    position: 'relative',
+    width: 110,
+    height: 110,
+    marginBottom: 16,
   },
   avatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     backgroundColor: '#1E3A5F',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
     elevation: 4,
   },
-  avatarText: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#fff',
+  avatarText: { fontSize: 44, fontWeight: 'bold', color: '#fff' },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#2563EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#F5F6FA',
   },
   userName: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#1A1A2E',
-    marginTop: 12,
+    color: '#111827',
+    marginBottom: 6,
   },
-  userRole: {
-    fontSize: 14,
-    color: '#6C757D',
-    marginTop: 2,
+  userContact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  userContactText: { fontSize: 13, color: '#6B7280' },
+  userContactSeparator: { fontSize: 13, color: '#9CA3AF', marginHorizontal: 6 },
+
+  // ---------- SECTION TITRE ----------
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginTop: 22,
+    marginBottom: 10,
+    marginLeft: 8,
   },
 
-  card: {
+  // ---------- MENU VERTICAL ----------
+  menu: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 1,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A2E',
-    marginBottom: 12,
-  },
-  infoItem: {
+  menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: '#6C757D',
-  },
-  infoValue: {
-    fontSize: 16,
-    color: '#1A1A2E',
-    fontWeight: '500',
-  },
-
-  quickActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    gap: 8,
-  },
-  quickButton: {
-    flex: 1,
-    minWidth: '30%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
     paddingVertical: 14,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 1,
-    gap: 4,
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
-  quickButtonText: {
-    fontSize: 12,
+  menuItemLast: { borderBottomWidth: 0 },
+  menuItemIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  menuItemText: {
+    flex: 1,
+    fontSize: 15,
     fontWeight: '500',
-    color: '#374151',
-    textAlign: 'center',
+    color: '#111827',
   },
 
-  
-  notifButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  // ---------- CARTE ENTREPRISE (pro) ----------
+  entrepriseCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderRadius: 16,
+    padding: 18,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 1,
   },
-  notifIconContainer: {
-    position: 'relative',
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: '#DBEAFE',
+  entrepriseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  entrepriseIconWrapper: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  notifBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#DC2626',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  notifBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  notifContent: {
-    flex: 1,
-  },
-  notifTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  notifSubtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 1,
-  },
-
-  
   entrepriseNom: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1A1A2E',
+    fontWeight: '700',
+    color: '#111827',
   },
-  entrepriseStatut: {
-    fontSize: 14,
-    color: '#6C757D',
-    marginTop: 4,
-    marginBottom: 8,
+  entrepriseStatutLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
   },
-  primaryButton: {
-    backgroundColor: '#1E3A5F',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
- addCompanyButton: {
+
+  // ---------- BOUTON DASHBOARD ----------
+  
+entrepriseAction: {
   flexDirection: 'row',
   alignItems: 'center',
-  justifyContent: 'center',
-  gap: 8,
-  backgroundColor:'#151556',
-  borderRadius: 12,
   paddingVertical: 14,
-  paddingHorizontal: 16,
-  marginTop: 12,
-  // Ombre légère pour donner du relief
-  shadowColor: '#2563EB',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.2,
-  shadowRadius: 4,
-  elevation: 3,
+  borderTopWidth: 1,
+  borderTopColor: '#F3F4F6',
 },
-addCompanyButtonText: {
-  color: '#fff',
+entrepriseActionText: {
+  flex: 1,
   fontSize: 15,
-  fontWeight: '600',
+  fontWeight: '500',
+  color: '#111827',
 },
-  pendingBox: {
+
+  // ---------- BOÎTES DE STATUT (attente / refusée) ----------
+  statusBox: {
     backgroundColor: '#FFF3CD',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
+    borderRadius: 12,
+    padding: 14,
   },
-  pendingText: {
+  statusBoxRefused: { backgroundColor: '#FEE2E2' },
+  statusBoxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  statusBoxTitle: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#856404',
-    fontSize: 14,
   },
-  refusedBox: {
-    backgroundColor: '#F8D7DA',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
+  statusBoxHint: {
+    fontSize: 12,
+    color: '#856404',
+    opacity: 0.85,
+    lineHeight: 17,
   },
-  refusedText: {
-    color: '#721C24',
-    fontSize: 14,
-  },
-  loadingText: {
-    color: '#6C757D',
-    fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 10,
+  statusBoxReason: {
+    fontSize: 13,
+    color: '#991B1B',
+    fontStyle: 'italic',
+    marginBottom: 8,
   },
 
-  adminButton: {
+  // Bouton bordé (attente / refusée)
+  outlineButton: {
     flexDirection: 'row',
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    paddingVertical: 14,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    gap: 8,
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#856404',
+    alignSelf: 'flex-start',
   },
-  adminButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  outlineButtonRefused: { borderColor: '#991B1B' },
+  outlineButtonText: {
+    color: '#856404',
+    fontSize: 13,
     fontWeight: '600',
   },
 
-  logoutButton: {
+  // ---------- DÉCONNEXION ----------
+  logoutLink: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-    marginTop: 8,
-    gap: 8,
+    gap: 6,
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 24,
   },
-  logoutButtonText: {
-    color: '#DC3545',
-    fontSize: 16,
+  logoutLinkText: {
+    color: '#9CA3AF',
+    fontSize: 14,
     fontWeight: '500',
   },
 
-// ---------- Boîte "En attente" ----------
-pendingBox: {
-  backgroundColor: '#FFF3CD',
-  borderRadius: 10,
-  padding: 14,
-  marginTop: 8,
-},
-pendingText: {
-  color: '#856404',
-  fontSize: 14,
-  fontWeight: '600',
-},
-pendingHint: {
-  color: '#856404',
-  fontSize: 12,
-  marginTop: 4,
-  opacity: 0.8,
-},
-editOutlineButton: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 6,
-  marginTop: 10,
-  paddingVertical: 8,
-  paddingHorizontal: 12,
-  borderRadius: 8,
-  borderWidth: 1,
-  borderColor: '#856404',
-  alignSelf: 'flex-start',
-},
-editOutlineButtonText: {
-  color: '#856404',
-  fontSize: 13,
-  fontWeight: '600',
-},
-
-// ---------- Boîte "Refusée" ----------
-refusedBox: {
-  backgroundColor: '#FEE2E2',
-  borderRadius: 10,
-  padding: 14,
-  marginTop: 8,
-},
-refusedHeader: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 6,
-  marginBottom: 4,
-},
-refusedTitle: {
-  color: '#991B1B',
-  fontSize: 14,
-  fontWeight: '700',
-},
-refusedReason: {
-  color: '#991B1B',
-  fontSize: 13,
-  lineHeight: 18,
-  marginTop: 2,
-  fontStyle: 'italic',
-},
-editOutlineButtonRefused: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 6,
-  marginTop: 12,
-  paddingVertical: 8,
-  paddingHorizontal: 12,
-  borderRadius: 8,
-  borderWidth: 1,
-  borderColor: '#991B1B',
-  alignSelf: 'flex-start',
-},
-editOutlineButtonRefusedText: {
-  color: '#991B1B',
-  fontSize: 13,
-  fontWeight: '600',
-  flex: 1,
-},
+  // ---------- VERSION ----------
   version: {
     textAlign: 'center',
-    marginTop: 20,
-    fontSize: 12,
-    color: '#ADB5BD',
+    marginTop: 16,
+    fontSize: 11,
+    color: '#D1D5DB',
   },
 });

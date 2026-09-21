@@ -7,7 +7,9 @@ import {
     TouchableOpacity, 
     StyleSheet,
     Alert, 
-    ActivityIndicator
+    ActivityIndicator,
+    Platform,
+    KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,12 +17,27 @@ import { useAuth } from '../../../context/AuthContext';
 import { useCart } from '../../../context/CartContext'
 import { supabase } from "../../../lib/supabase";
 import { getConfigCategorie } from '../../../Config/categorieConfig';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+
 
 export default function OrderScreen({ navigation, route }) {
 
 const { user } = useAuth();
-const {cart, getTotal, clearCart, idEntreprise} = useCart();
-const { total } = route.params || { total: getTotal() };
+const { cart, getTotal, clearCart, idEntreprise: idEntreprisePanier } = useCart();
+
+
+const produitDirect = route.params?.produitDirect || null;
+const idEntrepriseDirect = route.params?.idEntreprise || null;
+const estModeDirect = produitDirect !== null;
+
+
+const items = estModeDirect ? [produitDirect] : cart;
+const idEntreprise = estModeDirect ? idEntrepriseDirect : idEntreprisePanier;
+const total = estModeDirect
+  ? (produitDirect.prix_produit * (produitDirect.quantite || 1))
+  : getTotal();
+
 
 const [adresse, setAdresse] = useState('');
 const [telephone, setTelephone] = useState('');
@@ -28,11 +45,16 @@ const [notes, setNotes] = useState('');
 const [loading, setLoading] = useState(false);
 const isSubmitting = useRef(false);
 const [categorieEntreprise, setCategorieEntreprise] = useState(null);
-const [dateDebut, setDateDebut] = useState('');
-const [dateFin, setDateFin] = useState('');
+const [dateDebut, setDateDebut] = useState(null);
+const [dateFin, setDateFin] = useState(null);
+const [showPickerDebut, setShowPickerDebut] = useState(false);
+const [showPickerFin, setShowPickerFin] = useState(false);
+const [heureDebut, setHeureDebut] = useState(null);
+const[heureFin, setHeureFin] = useState(null);
+const [showTimePickerDebut, setShowTimePickerDebut] = useState(false);
+const [showTimePickerFin, setShowTimePickerFin] = useState(false);
 
-// Toute la logique "cette catégorie a besoin de quoi" vient d'un seul
-// endroit centralisé (config/categorieConfig.js), pas codée ici en dur.
+
 const config = getConfigCategorie(categorieEntreprise);
 const besoinDuree = config.besoinDuree;
 const besoinAdresse = config.besoinAdresse;
@@ -55,7 +77,19 @@ return data;
 
 };
 
-// Charge la catégorie de l'entreprise pour savoir quelle config appliquer
+const formatPhoneNumber = (text) => {
+const cleaned = text.replace(/\D/g, '').slice(0, 10);
+
+let formatted = '';
+
+for(let i = 0 ; i < cleaned.length; i++) {
+  if (i === 3 || i === 5 || i === 8) formatted += ' ';
+    formatted += cleaned[i];
+}
+return formatted;
+};
+
+
 useEffect(() => {
   const chargerCategorie = async () => {
     if (!idEntreprise) return;
@@ -77,37 +111,145 @@ useEffect(() => {
   chargerCategorie();
 }, [idEntreprise]);
 
+const formatDateFr = (date) => {
+  if (!date) return null;
+  return date.toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+
+
+const onChangeDateDebut = (event, selectedDate) => {
+  // Sur Android, le picker se ferme après validation
+  if (Platform.OS === 'android') setShowPickerDebut(false);
+
+  if (event.type === 'dismissed') return;
+
+  if (selectedDate) {
+    setDateDebut(selectedDate);
+
+    // Si dateFin est avant dateDebut, on la remet à dateDebut
+    if (dateFin && dateFin < selectedDate) {
+      setDateFin(null);
+    }
+  }
+};
+
+const onChangeDateFin = (event, selectedDate) => {
+  if (Platform.OS === 'android') setShowPickerFin(false);
+  if (event.type === 'dismissed') return;
+  if (selectedDate) setDateFin(selectedDate);
+};
+
+//formatage heure
+
+const formatHeureFr = (date) => {
+
+if(!date) return null;
+
+return date.toLocaleTimeString('fr-FR', {
+  hour: '2-digit',
+  minute: '2-digit',
+});
+};
+
+const onChangeHeureDebut = (event, selectedTime) => {
+if (Platform.OS === 'android') setShowTimePickerDebut(false);
+if(event.type === 'dismissed') return;
+if(selectedTime) setHeureDebut(selectedTime);
+};
+
+const onChangeHeureFin = (event, selectedTime) => {
+if (Platform.OS === 'android') setShowTimePickerFin(false);
+if(event.type === 'dismissed') return;
+if(selectedTime) setHeureFin(selectedTime);
+};
+
+const combinerDateHeure = (date, heure) => {
+  if(!date || ! heure) return null;
+  const combinee = new Date(date);
+  combinee.setHours(heure.getHours(), heure.getMinutes(), 0, 0);
+  return combinee;
+}
+
+
 const handleSubmit = async () => {
-   if (isSubmitting.current) return; 
+
+if (isSubmitting.current) return; 
     isSubmitting.current = true;
 
-    if(besoinAdresse && !adresse.trim()) {
-    Alert.alert('Erreur', `Vous devez saisir votre adresse de ${mots.livraison}`);
-    isSubmitting.current = false;
-    return;
-    }
+  if (besoinDuree && (!dateDebut || !dateFin)) {
+  Alert.alert('Erreur', 'Veuillez indiquer les dates de début et de fin');
+  isSubmitting.current = false;
+  return;
+}
 
-    if(!telephone.trim()){
-        Alert.alert('Erreur', 'Veuillez saisir votre telephone');
-        isSubmitting.current = false;
-        return;
-    }
+if (besoinDuree && (!heureDebut || !heureFin)) {
+  Alert.alert('Erreur', 'Veuillez indiquer les heure d\'arrivée et de départ');
+  isSubmitting.current = false;
+  return;
+}
 
-   if (cart.length === 0) {
-    Alert.alert('Erreur', `Votre ${mots.panier} est vide`);
-    isSubmitting.current = false;
-    return;
+if(besoinDuree) {
+
+  const debutComplet = combinerDateHeure(dateDebut, heureDebut);
+  const finComplet = combinerDateHeure(dateFin, heureFin);
+
+  if(finComplet < debutComplet) {
+  Alert.alert('Dates incohérentes',
+    'La date et l\'heure de départ doivent être après la date et l\'heure d\'arrivée.'
+  );
+
+isSubmitting.current = false;
+return;
+}
+
+if(
+  dateFin.getTime() === dateDebut.getTime() && finComplet.getTime() <= debutComplet.getTime()
+){
+ Alert.alert('Heure incohérents',
+  'Si l\'arrivée et le départ sont le même jour, l\'heure de départ doit être après l\'heure d\'arrivée.'
+ );
+
+ isSubmitting.current = false;
+ return;
+
+}
+}
+
+  const digitsPhone = telephone.replace(/\D/g, '');
+if (!telephone.trim()) {
+  Alert.alert('Erreur', 'Veuillez saisir votre téléphone');
+  isSubmitting.current = false;
+  return;
+}
+
+if (digitsPhone.length !== 10) {
+  Alert.alert(
+    'Téléphone invalide',
+    'Le numéro doit contenir exactement 10 chiffres (ex : 034 12 345 67).'
+  );
+  isSubmitting.current = false;
+  return;
+}
+
+if (items.length === 0) {
+  Alert.alert(
+    'Erreur',
+    estModeDirect
+      ? `Aucun ${mots.produit} sélectionné`
+      : `Votre ${mots.panier} est vide`
+  );
+  isSubmitting.current = false;
+  return;
 }
     if(!idEntreprise){
         Alert.alert('Erreur', 'Aucune entreprise selectionner');
         isSubmitting.current = false;
         return;
-    }
-
-    if (besoinDuree && (!dateDebut.trim() || !dateFin.trim())) {
-      Alert.alert('Erreur', 'Veuillez indiquer les dates de début et de fin');
-      isSubmitting.current = false;
-      return;
     }
 
     setLoading(true);
@@ -117,10 +259,10 @@ const handleSubmit = async () => {
 const userId = user.id;
 const reference = await generateReference();
 
-const totalCommande = getTotal();
+const totalCommande = total;
 
 // On verifie le stock avant
-for (const item of cart) {
+for (const item of items) {
   const { data: produit, error: stockError } = await supabase
     .from('produits')
     .select('stock')
@@ -159,21 +301,25 @@ const { data: commande, error: commandeError } = await supabase
     notes: notes.trim(),
     mode_paiement: 'cash',
     date_commande: new Date().toISOString(),
-    date_debut: besoinDuree ? new Date(dateDebut).toISOString() : null,
-    date_fin: besoinDuree ? new Date(dateFin).toISOString() : null,
+   date_debut: besoinDuree
+  ? combinerDateHeure(dateDebut, heureDebut).toISOString()
+  : null,
+date_fin: besoinDuree
+  ? combinerDateHeure(dateFin, heureFin).toISOString()
+  : null,
 })
 .select()
 .single();
 
 if (commandeError) throw commandeError;
 
-const lignes = cart.map((item ) => ({
-id_commande : commande.id_commande,
-id_produit : item.id,
-quantite : item.quantite,
-prix_unitaire : item.prix_produit,
-
+const lignes = items.map((item) => ({
+  id_commande: commande.id_commande,
+  id_produit: item.id,
+  quantite: item.quantite || 1,
+  prix_unitaire: item.prix_produit,
 }));
+
 
 const { error: ligneError } = await supabase
 .from('ligne_commande')
@@ -181,29 +327,40 @@ const { error: ligneError } = await supabase
 
 if (ligneError) throw ligneError;
 
-// vider le panier
-const {data: panierData} = await supabase
-.from('panier')
-.select('id_panier')
-.eq('id_client', userId)
-.eq('id_entreprise', idEntreprise)
-.maybeSingle();
+// Vider le panier UNIQUEMENT en mode panier.
+// En mode direct (réservation hôtel), on n'a jamais touché au panier.
+if (!estModeDirect) {
+  const { data: panierData } = await supabase
+    .from('panier')
+    .select('id_panier')
+    .eq('id_client', userId)
+    .eq('id_entreprise', idEntreprise)
+    .maybeSingle();
 
-if(panierData) {
-await supabase.from('ligne_panier').delete().eq('id_panier', panierData.id_panier);
+  if (panierData) {
+    await supabase
+      .from('ligne_panier')
+      .delete()
+      .eq('id_panier', panierData.id_panier);
+  }
 
+  clearCart();
 }
-
-clearCart();
 
 setAdresse('');
 setTelephone('');
 setNotes('');
-setDateDebut('');
-setDateFin('');
+setDateDebut(null);
+setDateFin(null);
+setHeureDebut(null);
+setHeureFin(null);
 
 const commandeLabel = mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1);
 const livraisonLabel = mots.livraison.charAt(0).toUpperCase() + mots.livraison.slice(1);
+
+// En mode direct (réservation), on renvoie vers "Mes réservations" (avec filtre).
+// En mode panier, on renvoie vers "Mes commandes".
+const destinationScreen = estModeDirect ? 'MesReservations' : 'ClientOrders';
 
 Alert.alert(
   `${commandeLabel} confirmée !`,
@@ -211,17 +368,13 @@ Alert.alert(
   [
     {
       text: `Voir mes ${mots.commandePluriel}`,
-      onPress: () => navigation.reset({
-        index: 0,
-        routes: [{ name: 'ClientOrders' }],
-      }),
+      // navigate (pas reset) : on empile l'écran destination SANS effacer
+      // l'historique. Le bouton retour continuera de fonctionner.
+      onPress: () => navigation.replace(destinationScreen),
     },
     {
       text: 'OK',
-      onPress: () => navigation.reset({
-        index: 0,
-        routes: [{ name: 'Accueil' }],
-      }),
+      onPress: () => navigation.goBack(),
     },
   ]
 );
@@ -246,24 +399,30 @@ return(
 </TouchableOpacity>
 <Text style={styles.title}>Validation de {mots.commande}</Text>
 </View>
-
-  <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-  <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>📋 Récapitulatif</Text>
-          {cart.map((item, index) => (
-            <View key={index} style={styles.summaryItem}>
-              <Text style={styles.summaryItemName}>{item.nom_produit}</Text>
-              <Text style={styles.summaryItemQty}>×{item.quantite}</Text>
-              <Text style={styles.summaryItemPrice}>
-                {(item.prix_produit * item.quantite).toLocaleString('fr-FR')} Ar
-              </Text>
-            </View>
-          ))}
-          <View style={styles.summaryTotal}>
-            <Text style={styles.summaryTotalLabel}>Total</Text>
-            <Text style={styles.summaryTotalPrice}>{total.toLocaleString('fr-FR')} Ar</Text>
-          </View>
-        </View>
+<KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+       <ScrollView contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
+ <View style={styles.summaryCard}>
+  <Text style={styles.summaryTitle}>📋 Récapitulatif</Text>
+  {items.map((item, index) => (
+    <View key={index} style={styles.summaryItem}>
+      <Text style={styles.summaryItemName}>{item.nom_produit}</Text>
+      <Text style={styles.summaryItemQty}>×{item.quantite || 1}</Text>
+      <Text style={styles.summaryItemPrice}>
+        {((item.prix_produit) * (item.quantite || 1)).toLocaleString('fr-FR')} Ar
+      </Text>
+    </View>
+  ))}
+  <View style={styles.summaryTotal}>
+    <Text style={styles.summaryTotalLabel}>Total</Text>
+    <Text style={styles.summaryTotalPrice}>{total.toLocaleString('fr-FR')} Ar</Text>
+  </View>
+</View>
 
         {/** Formulaire */}
 
@@ -287,42 +446,134 @@ return(
           <View style={styles.inputGroup}>
                       <Text style={styles.label}>Téléphone *</Text>
                       <TextInput
-                        style={styles.input}
-                        placeholder="032 00 000 00"
-                        value={telephone}
-                        onChangeText={setTelephone}
-                        keyboardType="phone-pad"
-                      />
+                style={styles.input}
+               placeholder="034 00 000 00"
+               value={telephone}
+               onChangeText={(text) => setTelephone(formatPhoneNumber(text))}
+               keyboardType="phone-pad"
+             maxLength={13}
+/>
         </View>
 
-        {besoinDuree && (
-          <>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Date d'arrivée / début *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="AAAA-MM-JJ (ex: 2026-09-15)"
-                value={dateDebut}
-                onChangeText={setDateDebut}
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Date de départ / fin *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="AAAA-MM-JJ (ex: 2026-09-17)"
-                value={dateFin}
-                onChangeText={setDateFin}
-              />
-            </View>
-          </>
-        )}
+     {besoinDuree && (
+  <>
+  {/* Date + heure de début */}
+<View style={styles.inputGroup}>
+  <Text style={styles.label}>Arrivée / début *</Text>
+  <View style={styles.dateHeureRow}>
+    <TouchableOpacity
+      style={[styles.dateButton, styles.dateButtonFlex]}
+      onPress={() => setShowPickerDebut(true)}
+    >
+      <Ionicons name="calendar-outline" size={20} color="#6B7280" />
+      <Text style={[styles.dateButtonText, !dateDebut && styles.datePlaceholder]}>
+        {dateDebut ? formatDateFr(dateDebut) : 'Date'}
+      </Text>
+    </TouchableOpacity>
+
+    <TouchableOpacity
+      style={[styles.dateButton, styles.heureButtonFlex]}
+      onPress={() => setShowTimePickerDebut(true)}
+    >
+      <Ionicons name="time-outline" size={20} color="#6B7280" />
+      <Text style={[styles.dateButtonText, !heureDebut && styles.datePlaceholder]}>
+        {heureDebut ? formatHeureFr(heureDebut) : 'Heure'}
+      </Text>
+    </TouchableOpacity>
+  </View>
+
+  {showPickerDebut && (
+    <DateTimePicker
+      value={dateDebut || new Date()}
+      mode="date"
+      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+      minimumDate={new Date()}
+      onChange={onChangeDateDebut}
+    />
+  )}
+
+  {showTimePickerDebut && (
+    <DateTimePicker
+      value={heureDebut || new Date()}
+      mode="time"
+      is24Hour={true}
+      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+      onChange={onChangeHeureDebut}
+    />
+  )}
+</View>
+
+    {/* Date de fin */}
+    {/* Date + heure de fin */}
+<View style={styles.inputGroup}>
+  <Text style={styles.label}>Départ / fin *</Text>
+  <View style={styles.dateHeureRow}>
+    <TouchableOpacity
+      style={[styles.dateButton, styles.dateButtonFlex]}
+      onPress={() => {
+        if (!dateDebut) {
+          Alert.alert(
+            'Choisissez d\'abord la date de début',
+            'Veuillez sélectionner la date d\'arrivée avant la date de départ.'
+          );
+          return;
+        }
+        setShowPickerFin(true);
+      }}
+    >
+      <Ionicons name="calendar-outline" size={20} color="#6B7280" />
+      <Text style={[styles.dateButtonText, !dateFin && styles.datePlaceholder]}>
+        {dateFin ? formatDateFr(dateFin) : 'Date'}
+      </Text>
+    </TouchableOpacity>
+
+    <TouchableOpacity
+      style={[styles.dateButton, styles.heureButtonFlex]}
+      onPress={() => {
+        if (!dateDebut || !heureDebut) {
+          Alert.alert(
+            'Choisissez d\'abord l\'arrivée',
+            'Veuillez sélectionner la date et l\'heure d\'arrivée avant de saisir le départ.'
+          );
+          return;
+        }
+        setShowTimePickerFin(true);
+      }}
+    >
+      <Ionicons name="time-outline" size={20} color="#6B7280" />
+      <Text style={[styles.dateButtonText, !heureFin && styles.datePlaceholder]}>
+        {heureFin ? formatHeureFr(heureFin) : 'Heure'}
+      </Text>
+    </TouchableOpacity>
+  </View>
+
+  {showPickerFin && (
+    <DateTimePicker
+      value={dateFin || dateDebut || new Date()}
+      mode="date"
+      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+      minimumDate={dateDebut || new Date()}
+      onChange={onChangeDateFin}
+    />
+  )}
+
+  {showTimePickerFin && (
+    <DateTimePicker
+      value={heureFin || heureDebut || new Date()}
+      mode="time"
+      is24Hour={true}
+      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+      onChange={onChangeHeureFin}
+    />
+  )}
+</View>
+  </>
+)}
 
          <View style={styles.inputGroup}>
                     <Text style={styles.label}>Instructions particulières</Text>
                     <TextInput
                       style={[styles.input, styles.textArea]}
-                      placeholder="Heure de livraison, code d'accès, etc."
                       value={notes}
                       onChangeText={setNotes}
                       multiline
@@ -332,10 +583,11 @@ return(
         
                   <View style={styles.paymentInfo}>
                     <Ionicons name="cash-outline" size={20} color="#2563EB" />
-                    <Text style={styles.paymentText}>Paiement à la livraison (Cash)</Text>
+                    <Text style={styles.paymentText}>Paiement en Cash </Text>
                   </View>
                 </View>
   </ScrollView>
+      </KeyboardAvoidingView>
   <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.submitButton, loading && { opacity: 0.6 }]}
@@ -366,7 +618,7 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: 4 },
     title: { fontSize: 20, fontWeight: 'bold', color: '#111827', marginLeft: 12 },
-    content: { padding: 16, paddingBottom: 100 },
+     scrollContent: { padding: 16, paddingBottom: 100 },
     summaryCard: {
       backgroundColor: '#fff',
       borderRadius: 12,
@@ -443,4 +695,37 @@ paymentText: { fontSize: 14, color: '#1E40AF', fontWeight: '500' },
     alignItems: 'center',
   },
   submitButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+
+  dateButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 10,
+  backgroundColor: '#F9FAFB',
+  borderWidth: 1,
+  borderColor: '#D1D5DB',
+  borderRadius: 10,
+  paddingHorizontal: 14,
+  paddingVertical: 14,
+},
+dateButtonText: {
+  fontSize: 15,
+  color: '#111827',
+  flex: 1,
+},
+datePlaceholder: {
+  color: '#9CA3AF',
+},
+dateHeureRow: {
+  flexDirection: 'row',
+  gap: 8,
+},
+dateButtonFlex: {
+  flex: 1.4,
+},
+heureButtonFlex: {
+  flex: 1,
+},
+
 });
+
+

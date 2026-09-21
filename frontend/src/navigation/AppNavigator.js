@@ -16,6 +16,8 @@ import CompanyScreen from '../screens/CompanyScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import EditProfileScreen from '../screens/EditProfilScreen';
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import AddCompanyScreen from '../screens/AddCompanyScreen';
 import AdminScreen from '../screens/AdminScreen';
 import AdminVillesScreen from '../screens/AdminVillesScreen';
@@ -68,6 +70,8 @@ function HomeStack() {
       <Stack.Screen name="ProOrders" component={ProOrderScreen} />
       <Stack.Screen name="ProOrderDetail" component={ProOrderDetailScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="MesProduits" component={MesProduits} />
     </Stack.Navigator>
   );
@@ -191,7 +195,7 @@ function MainTabs() {
         />
 
         <Tab.Screen name="Profil" component={ProfileScreen} />
-
+     
         <Tab.Screen
           name="Panier"
           component={CartScreen}
@@ -215,22 +219,6 @@ function MainTabs() {
           }}
         />
 
-        {user?.role === 'admin' && (
-          <Tab.Screen
-            name="admin"
-            component={AdminStack}
-            options={{
-              tabBarLabel: 'Admin',
-              tabBarIcon: ({ focused, color, size }) => (
-                <Ionicons
-                  name={focused ? 'settings' : 'settings-outline'}
-                  size={size}
-                  color={color}
-                />
-              ),
-            }}
-          />
-        )}
       </Tab.Navigator>
     </SafeAreaView>
   );

@@ -155,14 +155,25 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  
+  const refreshUser = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+
+    const fullUser = await fetchProfile(session.user);
+    setUser(fullUser);
+    return fullUser;
+  };
+
  
-  const value = {
+    const value = {
     user,
     loading,
     register,
     login,
     logout,
-    isAuthenticated: !!user, 
+    refreshUser,
+    isAuthenticated: !!user,
   };
 
   return (

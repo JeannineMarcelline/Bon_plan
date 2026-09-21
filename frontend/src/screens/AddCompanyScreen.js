@@ -1,761 +1,404 @@
-import React, {useState, useEffect} from "react";
-import {View, Text, TextInput, TouchableOpacity, StyleSheet,
-    ScrollView,Alert,ActivityIndicator,KeyboardAvoidingView, Platform 
-} from  'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from "../context/AuthContext";
-import { supabase } from "../lib/supabase";
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { Image } from 'react-native';
-import * as Location from 'expo-location';
-
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
+import { getConfigCategorie } from '../Config/categorieConfig';
 
+const Max_photo = 3;
 
+export default function AddProduit ({navigation, route}) {
 
-export default function AddCompanyScreen({navigation, route}){
-    const {user} = useAuth();
-   
-    const entrepriseId = route?.params?.entrepriseId || null;
-    const estModification = entrepriseId !== null;
+const {user} = useAuth();
+const produitId = route.params?.produitId || null;
+const estModification = produitId !== null;
 
-    const [nom, setNom] = useState('');
-    const [description, setDescription] = useState('');
-    const [adresse, setAdresse] = useState('');
-    const [telephone, setTelephone] = useState('');
-    const [siteweb, setSiteweb] = useState('');
-    const [logo,setLogo] = useState('');
-    const [entreprise, setEntreprise] = useState(null);
-    
+const [nom_produit, setNom_produit] = useState('');
+const [prix_produit, setPrix_produit] = useState('');
+const [description_pro, setDescription_pro] = useState('');
+const [stock, setStock] = useState('')
+const [photos_produit, setPhotos_produit] = useState([]);
+const [upLoading, setUpLoading] = useState(false);
+const [chargementInitial, setChargementInitial] = useState(true);
+// MODIFIÉ : le champ "caracteristiques" (JSON detail_1/detail_2...) a été
+// retiré — il faisait doublon avec Description sans apporter de vraie
+// valeur (rien n'exploitait encore cette structure pour du filtrage).
+// Tout va maintenant dans description_pro, en texte libre.
+const [mots, setMots] = useState(getConfigCategorie(null).vocabulaire);
+const [entrepriseId, setEntrepriseId] = useState(null);
 
+useEffect(() => {
+  initialiser();
+}, []);
 
-    const [villes, setVilles] = useState([]);
-    const [categories, setCategories] = useState([]);
-    const [villeId,setVilleId] = useState(null);
-    const [categorieId, setCategorieId] = useState(null);
-    const [logoUri, setLogoUri] = useState(null);
-
-    const [loading, setLoading] = useState(false);
-    const[loadingData, setLoadingData] = useState(true);
-
-    const geocodeAddress = async (address) => {
+const initialiser = async () => {
   try {
-    const result = await Location.geocodeAsync(address);
-    if (result.length > 0) {
-      return {
-        latitude: result[0].latitude,
-        longitude: result[0].longitude,
-      };
+    // On récupère toujours la catégorie de l'entreprise, qu'on soit
+    // en train d'ajouter ou de modifier, pour adapter le vocabulaire.
+    const { data: entreprise, error: entrepriseError } = await supabase
+      .from('entreprises')
+      .select('id, categories ( nom )')
+      .eq('utilisateur_id', user.id)
+      .maybeSingle();
+
+    if (entrepriseError) throw entrepriseError;
+
+    if (entreprise) {
+      setEntrepriseId(entreprise.id);
+      const config = getConfigCategorie(entreprise.categories?.nom || null);
+      setMots(config.vocabulaire);
     }
-    return null;
+
+    if (estModification) {
+      await chargerProduitExistant();
+    }
   } catch (error) {
-    console.error('Erreur de géocodage:', error);
-    return null;
+    console.error('Erreur initialisation:', error);
+  } finally {
+    setChargementInitial(false);
   }
 };
 
-const formatPhoneNumber = (text) => {
+const chargerProduitExistant = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('produits')
+      .select('*')
+      .eq('id', produitId)
+      .maybeSingle();
 
-const cleaned = text.replace(/\D/g, '');
+    if (error) throw error;
 
-const limited = cleaned.slice(0, 10);
-
-let formatted = '';
-
-for (let i = 0; i < limited.length; i++) {
-    if (i === 3 || i === 5 || i === 8) {
-      formatted += ' ';
+    if (data) {
+      setNom_produit(data.nom_produit || '');
+      setPrix_produit(data.prix_produit?.toString() || '');
+      setDescription_pro(data.description_pro || '');
+      setStock(data.stock?.toString() || '');
+      setPhotos_produit(data.photos_produit || []);
+      // MODIFIÉ : plus de lecture de data.caracteristiques ici — un ancien
+      // produit qui en avait encore en base garde cette donnée intacte
+      // (on ne la supprime pas côté base), on ne l'affiche/modifie juste
+      // plus depuis ce formulaire.
     }
-    formatted += limited[i];
+
+  } catch (error) {
+    console.error('Erreur chargement produit:', error);
+    Alert.alert('Erreur', `Impossible de charger cet élément`);
   }
+};
+
+
+const pickImage = async () => {
+  if (photos_produit.length >= Max_photo) {
+    Alert.alert('Limite atteinte', `Vous ne pouvez ajouter que ${Max_photo} photo(s)`);
+    return;
+  }
+
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+  if (status !== 'granted') {
+    Alert.alert(
+      'Permission refusée', 
+      'Vous devez autoriser l\'accès à la galerie pour ajouter des photos.'
+    );
+    return;
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: true,
+    aspect: [4, 3],
+    quality: 0.8,
+  });
+
+  if (!result.canceled) {
+    setPhotos_produit([...photos_produit, result.assets[0].uri]);
+  }
+};
+
+
+const removePhoto = (index) => {
+ setPhotos_produit(photos_produit.filter((_, i) => i !== index));
+};
+
+
+const uploadPhoto = async (uri, userId, index) => {
+try{
+const base64 = await FileSystem.readAsStringAsync(uri, {
+  encoding: FileSystem.EncodingType.Base64
   
-  return formatted;
+});
+
+const arrayBuffer = decode(base64);
+const fileExt = uri.split('.').pop();
+const fileName = `${userId}-${Date.now()}-${index}.${fileExt}`;
+
+const  { error: uploadError } = await supabase.storage
+.from('produit_photo')
+.upload(fileName, arrayBuffer, {contentType: `image/${fileExt}`});
+
+if (uploadError) throw uploadError;
+
+const { data } = supabase.storage.from('produit_photo').getPublicUrl(fileName);
+
+return data.publicUrl;
+}catch(error){
+    console.error('Erreur upload photo produit:', error);
+    return null;
+}
+};
+
+const handleSubmit = async () => {
+if(!nom_produit || !prix_produit || !stock) {
+  Alert.alert ('Erreur', 'Veuillez remplir tous les champs obligatoires');
+  return;
+}
+try{
+setUpLoading(true);
+
+if (!entrepriseId) {
+  Alert.alert('Erreur', 'Vous n\'avez pas encore d\'entreprise');
+  setUpLoading(false);
+  return;
 }
 
-    useEffect(() => {
-        const loadData = async () => {
-            try{
-       
-           const [villesRes, categoriesRes] = await Promise.all([
-             supabase.from('villes').select('*').order('nom'),
-             supabase.from('categories').select('*').order('nom'),
-           ]);
+const photoUrls = [];
+for (let i=0; i < photos_produit.length; i++) {
+const uri = photos_produit[i];
 
-           if (villesRes.error) throw villesRes.error;
-           if (categoriesRes.error) throw categoriesRes.error;
+if(uri.startsWith('file://') || uri.startsWith('content://')){
+const url = await uploadPhoto(photos_produit[i], user.id, i);
+if(url) photoUrls.push(url);
+}else{
+  photoUrls.push(uri);
+}
+}
 
-           setVilles(villesRes.data);
-           setCategories(categoriesRes.data);
-
-           
-           if (estModification) {
-             const { data: entrepriseData, error: entError } = await supabase
-               .from('entreprises')
-               .select('*')
-               .eq('id', entrepriseId)
-               .maybeSingle();
-
-             if (entError) throw entError;
-
-             if (entrepriseData) {
-               setEntreprise(entrepriseData)
-               setNom(entrepriseData.nom || '');
-               setDescription(entrepriseData.description || '');
-               setAdresse(entrepriseData.adresse || '');
-               setTelephone(entrepriseData.telephone || '');
-               setSiteweb(entrepriseData.siteweb || '');
-               setLogo(entrepriseData.logo || '');
-               setLogoUri(entrepriseData.logo || null);
-               setVilleId(entrepriseData.ville_id);
-               setCategorieId(entrepriseData.categorie_id);
-             }
-           }
-
-            }catch(error){
-         console.error('Erreur chargement données:', error);
-         Alert.alert('Erreur', 'Impossible de charger les données');
-            }finally{
-                setLoadingData(false);
-            }
-        };
-        loadData();
-    },[]);
-
-    if(user?.role !== 'pro'){
-        return(
-            <SafeAreaView style={styles.container}>
-              <View style={styles.center}>
-                <Ionicons name='lock-closed' size={60} color='#e74c3c'/>
-                <Text style={styles.errorTitle}>Accès refusé</Text>
-                <Text style={styles.errorText}>
-                    Seuls les Professionnels peuvent ajouter une entreprise
-                </Text>
-                <TouchableOpacity
-                 style={styles.backButton}
-                 onPress={() => navigation.goBack()}
-                >
-                 <Text style={styles.backButtonText}>Retour</Text>
-                </TouchableOpacity>
-              </View>
-            </SafeAreaView>
-        );
-    }
-
-
-  const uploadLogo = async (uri, userId) => {
-    try {
-      
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-  
-      const arrayBuffer = decode(base64);
-
-      const fileExt = uri.split('.').pop();
-      const fileName = `${userId}-${Date.now()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('logos')
-        .upload(fileName, arrayBuffer, {
-          contentType: `image/${fileExt}`,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage.from('logos').getPublicUrl(fileName);
-
-      return data.publicUrl;
-    } catch (error) {
-      console.error('Erreur upload logo:', error);
-      return null;
-    }
-  };
-
-  const pickImage = async () =>{
-    const {status} = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if(status !== 'granted') {
-      Alert.alert('Permission refusée', 'Vous devez autoriser l\'accès à la galerie');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect:[1,1],
-      quality:0.8,
-    });
-    if(!result.canceled){
-      const uri = result.assets[0].uri;
-      setLogoUri(uri);
-      setLogo(uri);
-    }
-  }
-
-
-const notifierAdmin = async (nomEntreprise, nomCategorie, estModif = false) => {
-  try {
-    const { data: dataAdmin, error: errorAdmin } = await supabase
-      .from('utilisateurs')
-      .select('id')
-      .eq('role', 'admin')
-      .limit(1);
-
-    if (errorAdmin || !dataAdmin || dataAdmin.length === 0) {
-      console.log("Pas d'admin trouvé, notification ignorée");
-      return;
-    }
-
-    const titre = estModif
-      ? 'Entreprise modifiée'
-      : 'Nouvelle entreprise en attente';
-
-    const message = estModif
-      ? `"${nomEntreprise}" (${nomCategorie}) a été modifiée par son propriétaire.`
-      : `"${nomEntreprise}" (${nomCategorie}) attend votre validation.`;
-
-    await supabase.from('notifications').insert({
-      utilisateur_id: dataAdmin[0].id,
-      titre,
-      message,
-      lue: false,
-    });
-  } catch (error) {
-    console.error('Erreur de notification admin:', error);
-  }
+// MODIFIÉ : plus de construction de caracteristiquesJson ici, et plus de
+// champ "caracteristiques" dans l'objet envoyé à Supabase ci-dessous.
+const donneesProduit = {
+  nom_produit,
+  description_pro,
+  prix_produit: parseFloat(prix_produit),
+  stock: parseInt(stock),
+  photos_produit: photoUrls.length > 0 ? photoUrls : photos_produit, // garde les anciennes photos si pas de nouvelles
 };
 
-
-   const handleSubmit = async () =>{
-    if(!nom || !adresse || !telephone || !villeId || !categorieId ){
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
-      return;
-    }
-    setLoading(true);
-
-    let queryPhone = supabase
-    .from('entreprises')
-    .select('id, nom')
-    .eq('telephone', telephone);
-
-    if(estModification){
-      queryPhone = queryPhone.neq('id', entrepriseId);
-    }
-
-    const { data: existingEntreprise, error: phoneCheckError} = 
-    await queryPhone.maybeSingle();
-
-    if(phoneCheckError) {
-      console.error('Erreur vérif téléphone entreprise:', phoneCheckError);
-      Alert.alert('Erreur', 'Impossible de vérifier le numéro. Réessayer');
-      setLoading(false);
-      return;
-    }
-
-    if(existingEntreprise) {
-      Alert.alert( 'Numéro déjà utilisé',
-      `Ce numéro est déjà associé à l'entreprise "${existingEntreprise.nom}". Utilisez un autre numéro.`);
-      setLoading(false);
-      return;
-    }
-    
-
-   const coords = await geocodeAddress(adresse);
-   const latitude = coords?.latitude || null;
-   const longitude = coords?.longitude || null;
-   console.log('Coordonnées trouvées :', latitude, longitude);
-
-    try{
-      
-      let logoUrl = logo;
-   
-      if (logoUri && (logoUri.startsWith('file://') || logoUri.startsWith('content://'))) {
-        logoUrl = await uploadLogo(logoUri, user.id);
-      }
-
-const nomCategorie = categories.find(c => c.id === categorieId)?.nom || 'Catégorie inconnue';
-
 if (estModification) {
- 
-  const updateData = {
-    nom,
-    description: description || '',
-    adresse,
-    telephone,
-    siteweb: siteweb || '',
-    logo: logoUrl || '',
-    ville_id: villeId,
-    latitude,
-    longitude,
-    raison_refus: null,
-  
-  };
+  const { error: produitError } = await supabase
+    .from('produits')
+    .update(donneesProduit)
+    .eq('id', produitId);
 
-  if (entreprise?.statutvalidation === 'refuse') {
-    updateData.statutvalidation = 'en_attente';
-  }
+  if (produitError) throw produitError;
 
-  const { error } = await supabase
-    .from('entreprises')
-    .update(updateData)
-    .eq('id', entrepriseId);
-
-  if (error) throw error;
-
-  await notifierAdmin(nom, nomCategorie, true);
-
-  const message = entreprise?.statutvalidation === 'refuse' ? 'Vos modifications ont été enregistrées. Votre entreprise repasse en attente de validation.' 
-  : 'Vos modifications ont bien été prise en compte .L\'administrateur a été notifié.';
-
-  Alert.alert(
-    'Modifications enregistrées',
-     message,
-    [{ text: 'OK', onPress: () => navigation.goBack() }]
-  );
+  Alert.alert('Succès', `${mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1)} mis${mots.produit === 'produit' ? '' : 'e'} à jour !`, [
+    { text: 'OK', onPress: () => navigation.goBack() }
+  ]);
 } else {
-        const { error } = await supabase.from('entreprises').insert({
-          nom,
-          description: description || '',
-          adresse,
-          telephone,
-          siteweb: siteweb || '',
-          logo: logoUrl || '',
-          ville_id: villeId,
-          categorie_id: categorieId,
-          utilisateur_id: user.id,
-          statutvalidation: 'en_attente',
-          latitude,
-          longitude,
-        });
+  const { error: produitError } = await supabase
+    .from('produits')
+    .insert({
+      ...donneesProduit,
+      id_entreprise: entrepriseId,
+      actif: true,
+    });
 
-        if (error) throw error;
+  if (produitError) throw produitError;
 
-        await notifierAdmin(nom, nomCategorie);
-        Alert.alert(
-          ' Entreprise créée !',
-          'Votre entreprise est en attente de validation par l\'administrateur. Vous serez notifié dès qu\'elle sera validée.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
-        );
-      }
+  Alert.alert('Succès', `${mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1)} ajouté${mots.produit === 'produit' ? '' : 'e'} !`, [
+    { text: 'OK', onPress: () => navigation.goBack() }
+  ]);
+}
 
-    }catch(error){
-      console.error('Erreur création entreprise:' ,error);
-      Alert.alert('Erreur', 'Une erreur est survenue');
-    }finally{
-        setLoading(false);
-    }
-   };
+}catch(error){
+console.error('Erreur ajout de produit:' , error);
+Alert.alert('Erreur', `Impossible d'enregistrer ${mots.produit === 'produit' ? 'ce produit' : `cette ${mots.produit}`}`);
+}finally{
+  setUpLoading(false);
+}
+};
 
-   if(loadingData) {
-    return(
-        <SafeAreaView>
-            <ActivityIndicator size="large" color="#007BFF"/>
-        </SafeAreaView>
-    );
-   }
-
-return(
-    <SafeAreaView style={styles.container} >
-       <KeyboardAvoidingView 
-          style={{ flex: 1 }} 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-        >
-          <ScrollView 
-           contentContainerStyle={styles.scrollContent}
-           showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            >
-         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name='arrow-back' size={24} color='#2c3e50'/>
-          </TouchableOpacity>
-           <Text style={styles.title}>{estModification ? 'Modifier mon entreprise' : 'Ajouter mon entreprise'}</Text>
-         </View>
-     {/**Formulaire */}
-    <View style={styles.form}>
-    <View style={styles.inputContainer}>
-        <Text style={styles.label}>Nom de l'entreprise *</Text>
-        <TextInput
-        style={styles.input}
-        placeholder="Ex: Hôtel Fianar"
-        value={nom}
-        onChangeText={setNom}
-        />
-    </View>
-
-  <View style={styles.inputContainer}>
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-        style={[styles.input, styles.textArea]}
-        placeholder="Décrivez votre activité"
-        value={description}
-        onChangeText={setDescription}
-        multiline
-        numberOfLines={4}
-        />
-    </View>
-
-   <View style={styles.inputContainer}>
-        <Text style={styles.label}>Adresse *</Text>
-        <TextInput
-        style={styles.input}
-        placeholder="Ex: Rue du 26 juin, Fianarantsoa"
-        value={adresse}
-        onChangeText={setAdresse}
-        />
-    </View>
-
-     <View style={styles.inputContainer}>
-        <Text style={styles.label}>Téléphone *</Text>
-           <TextInput
-                  style={styles.input}
-                  placeholder="034 00 000 00"
-                  placeholderTextColor="#9CA3AF"
-                  value={telephone}
-                  onChangeText={(text) => {
-                  const formatted = formatPhoneNumber(text);
-                  setTelephone(formatted);
-                      }}
-          keyboardType="phone-pad"
-          maxLength={13} 
-        />
-    </View>
-
-    <View style={styles.inputContainer}>
-        <Text style={styles.label}>Site web</Text>
-        <TextInput
-        style={styles.input}
-        placeholder="Ex: www.monentreprise.mg"
-        value={siteweb}
-        onChangeText={setSiteweb}
-        autoCapitalize="none"
-        />
-    </View>
-
-   {/* Logo (photo) */}
-<View style={styles.inputContainer}>
-  <Text style={styles.label}>Logo de l'entreprise</Text>
-  
-  <View style={styles.logoContainer}>
-    {logoUri ? (
-      <Image source={{ uri: logoUri }} style={styles.logoPreview} />
-    ) : (
-      <View style={styles.logoPlaceholder}>
-        <Ionicons name="image-outline" size={50} color="#ccc" />
-        <Text style={styles.logoPlaceholderText}>Aucun logo</Text>
-      </View>
-    )}
-    
-    <TouchableOpacity style={styles.pickImageButton} onPress={pickImage}>
-      <Ionicons name="images-outline" size={20} color="#fff" />
-      <Text style={styles.pickImageButtonText}>
-        {logoUri ? 'Changer le logo' : 'Choisir une image'}
-      </Text>
-    </TouchableOpacity>
-    
-    {logoUri && (
-      <TouchableOpacity 
-        style={styles.removeLogoButton} 
-        onPress={() => { setLogoUri(null); setLogo(''); }}
-      >
-        <Ionicons name="close-circle" size={20} color="#e74c3c" />
-        <Text style={styles.removeLogoText}>Retirer</Text>
-      </TouchableOpacity>
-    )}
-  </View>
-</View>
-
-   <View style={styles.inputContainer}>
-    <Text style={styles.label}>Ville *</Text>
-    <View style={styles.pickerContainer}>
-        {villes.length === 0 ? (
-        <Text style={styles.emptyText}>Aucune ville disponible</Text>
-     ) : (
-        villes.map((ville) => (
-            <TouchableOpacity
-            key={ville.id}
-            style={[
-            styles.pickerItem,
-            villeId === ville.id && styles.pickerItemSelected,
-            ]}
-             onPress={() => setVilleId(ville.id)}
-            >
-           <Text
-           style={[
-                        styles.pickerItemText,
-                        villeId === ville.id && styles.pickerItemTextSelected,
-                      ]}
-           >
-            {ville.nom}
-           </Text>
-            </TouchableOpacity>
-        ))
-    )}
-
-    </View>
-    </View>
-
-<View style={styles.inputContainer}>
-  <Text style={styles.label}>Catégorie *</Text>
-
-  {/* Petite mention expliquant pourquoi c'est bloqué en édition */}
-  {estModification && (
-    <Text style={styles.hint}>
-      La catégorie ne peut plus être modifiée après la création de l'entreprise.
-    </Text>
-  )}
-
-  <View style={styles.pickerContainer}>
-    {categories.length === 0 ? (
-      <Text style={styles.emptyText}>Aucune catégorie disponible</Text>
-    ) : (
-      categories.map((cat) => {
-        const selected = categorieId === cat.id;
-        // En mode édition, aucune catégorie n'est cliquable
-        const disabled = estModification;
-
-        return (
-          <TouchableOpacity
-            key={cat.id}
-            style={[
-              styles.pickerItem,
-              selected && styles.pickerItemSelected,
-              disabled && styles.pickerItemDisabled,
-            ]}
-            onPress={() => {
-              if (!disabled) setCategorieId(cat.id);
-            }}
-            disabled={disabled}
-          >
-            <Text
-              style={[
-                styles.pickerItemText,
-                selected && styles.pickerItemTextSelected,
-              ]}
-            >
-              {cat.icone} {cat.nom}
-            </Text>
-          </TouchableOpacity>
-        );
-      })
-    )}
-  </View>
-</View>
-      <TouchableOpacity
-            style={styles.submitButton}
-            onPress={handleSubmit}
-            disabled={loading}
-          >
-            <Text style={styles.submitButtonText}>
-              {loading
-                ? (estModification ? 'Mise à jour...' : 'Création en cours...')
-                : (estModification ? 'Enregistrer les modifications' : ' Créer mon entreprise')}
-            </Text>
-          </TouchableOpacity>
-
-        
-
-    </View>
-    </ScrollView>
- </KeyboardAvoidingView>
+if (chargementInitial) {
+  return (
+    <SafeAreaView style={styles.center}>
+      <ActivityIndicator size="large" color="#2563EB" />
     </SafeAreaView>
-);
+  );
+}
+
+const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color="#1A1A2E" />
+            </TouchableOpacity>
+            <Text style={styles.title}>
+              {estModification ? `Modifier ${mots.produit === 'produit' ? 'le' : 'la'} ${mots.produit}` : `Ajouter ${mots.produit === 'produit' ? 'un' : 'une'} ${mots.produit}`}
+            </Text>
+          </View>
+
+          <View style={styles.form}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Nom {mots.produit === 'produit' ? 'du' : 'de la'} {mots.produit} *</Text>
+              <TextInput style={styles.input} placeholder={`Ex: ${nomLabel} standard`} value={nom_produit
+
+              } onChangeText={setNom_produit} />
+            </View>
+
+            {/* MODIFIÉ : Description reste seule ; le placeholder est
+                complété pour couvrir ce que faisait avant Caractéristiques
+                (le pro peut y mettre "2 personnes, wifi, climatisation..."
+                directement dans son texte libre) */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Description</Text>
+              <TextInput
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                placeholder="Décrivez ce que vous proposez : équipements, capacité, ambiance..."
+                value={description_pro}
+                onChangeText={setDescription_pro}
+                multiline
+              />
+            </View>
+
+            {/* MODIFIÉ : bloc "Caractéristiques" entièrement retiré */}
+
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, styles.halfWidth]}>
+                <Text style={styles.label}>Prix (Ar) *</Text>
+                <TextInput style={styles.input} placeholder="5000" keyboardType="numeric" value={prix_produit} onChangeText={setPrix_produit} />
+              </View>
+              <View style={[styles.inputGroup, styles.halfWidth]}>
+                <Text style={styles.label}>{mots.stock}</Text>
+                <TextInput style={styles.input} placeholder="20" keyboardType="numeric" value={stock} onChangeText={setStock} />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Photos ({photos_produit.length}/{Max_photo})</Text>
+
+              {photos_produit.length < Max_photo && (
+                <TouchableOpacity style={styles.photoButton} onPress={pickImage}>
+                  <Text style={styles.photoButtonText}>📷 Ajouter une photo</Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.photosRow}>
+                {photos_produit.map((uri, index) => (
+                  <View key={index} style={styles.photoPreviewWrap}>
+                    <Image source={{ uri }} style={styles.photoPreview} />
+                    <TouchableOpacity style={styles.removePhotoBtn} onPress={() => removePhoto(index)}>
+                      <Ionicons name="close-circle" size={22} color="#DC2626" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitButton, upLoading && { opacity: 0.6 }]}
+              onPress={handleSubmit}
+              disabled={upLoading}
+            >
+              <Text style={styles.submitButtonText}>
+                {upLoading
+                   ? 'Enregistrement...'
+                   : estModification ? 'Mettre à jour' : `Enregistrer ${mots.produit === 'produit' ? 'le produit' : `la ${mots.produit}`}`}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-  pickerItemDisabled: {
-  opacity: 0.5,
-},
- container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-   backBtn: {
-    padding: 8,
-    marginRight: 10,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
- form: {
-    backgroundColor: '#fff',
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  backButton: { padding: 4 },
+  title: { fontSize: 22, fontWeight: 'bold', color: '#111827', marginLeft: 12 },
+  form: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2c3e50',
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    color: '#2c3e50',
+    borderColor: '#E5E7EB',
   },
- textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-  pickerContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  pickerItem: {
+  inputGroup: { marginBottom: 12 },
+  row: { flexDirection: 'row', gap: 12 },
+  halfWidth: { flex: 1 },
+  label: { fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 6 },
+  input: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
-    marginRight: 8,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#111827',
+  },
+  photoButton: {
+    backgroundColor: '#F5F6FA',
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
     marginBottom: 8,
   },
-  pickerItemSelected: {
-    backgroundColor: '#007BFF',
-  },
-  pickerItemText: {
-    fontSize: 14,
-    color: '#2c3e50',
-  },
-   pickerItemTextSelected: {
-    color: '#fff',
-  },
-  emptyText: {
-    color: '#95a5a6',
-    fontSize: 14,
+  photoButtonText: { fontSize: 14, color: '#1E3A5F' },
+  photosRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  photoPreviewWrap: { position: 'relative' },
+  photoPreview: { width: 90, height: 90, borderRadius: 8 },
+  removePhotoBtn: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#fff',
+    borderRadius: 11,
   },
   submitButton: {
-    backgroundColor: '#007BFF',
+    backgroundColor: '#2563EB',
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
   },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
+  submitButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  center:{
+    flex:1,
+    justifyContent:'center',
+    alignItems:'center'
   },
-  viewLink: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  viewLinkText: {
-    fontSize: 14,
-    color: '#007BFF',
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#e74c3c',
-    marginTop: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#7f8c8d',
-    textAlign: 'center',
-    marginTop: 10,
-  },
-   backButton: {
-    marginTop: 20,
-    backgroundColor: '#007BFF',
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  hint: {
-  fontSize: 12,
-  color: '#95a5a6',
-  marginTop: 4,
-},
-logoContainer: {
-  alignItems: 'center',
-  marginBottom: 8,
-},
-logoPreview: {
-  width: 120,
-  height: 120,
-  borderRadius: 60,
-  borderWidth: 2,
-  borderColor: '#e0e0e0',
-  marginBottom: 12,
-},
-logoPlaceholder: {
-  width: 120,
-  height: 120,
-  borderRadius: 60,
-  backgroundColor: '#f5f5f5',
-  justifyContent: 'center',
-  alignItems: 'center',
-  borderWidth: 2,
-  borderColor: '#e0e0e0',
-  borderStyle: 'dashed',
-  marginBottom: 12,
-},
-logoPlaceholderText: {
-  fontSize: 12,
-  color: '#ccc',
-  marginTop: 4,
-},
-pickImageButton: {
-  backgroundColor: '#007BFF',
-  paddingHorizontal: 20,
-  paddingVertical: 10,
-  borderRadius: 8,
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 8,
-  marginBottom: 6,
-},
-pickImageButtonText: {
-  color: '#fff',
-  fontWeight: 'bold',
-  fontSize: 14,
-},
-removeLogoButton: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 4,
-  padding: 6,
-},
-removeLogoText: {
-  color: '#e74c3c',
-  fontSize: 14,
-},
-})
+});

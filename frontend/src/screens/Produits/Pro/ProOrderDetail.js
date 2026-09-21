@@ -17,15 +17,6 @@ import { supabase } from '../../../lib/supabase';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getConfigCategorie } from '../../../Config/categorieConfig';
 
-// Raisons d'annulation prédéfinies (Option B : liste + "Autre" libre)
-const RAISONS_ANNULATION = [
-  'Rupture de stock',
-  'Trop de demandes en cours',
-  'Erreur de prix',
-  'Erreur de disponibilité',
-  'Problème de livraison',
-  'Autre',
-];
 
 export default function ProOrderDetailScreen({ navigation, route }) {
   const { commandeId } = route.params;
@@ -45,6 +36,13 @@ export default function ProOrderDetailScreen({ navigation, route }) {
   const besoinAdresse = config.besoinAdresse;
   const besoinDuree = config.besoinDuree;
   const mots = config.vocabulaire;
+
+  // Raisons d'annulation adaptées à la catégorie
+const raisonsAnnulation = config.raisonsAnnulation || [
+  'Erreur de prix',
+  'Indisponibilité',
+  'Autre',
+];
 
   const STATUTS = {
     en_attente: {
@@ -262,11 +260,33 @@ export default function ProOrderDetailScreen({ navigation, route }) {
   // ANNULATION avec raison (modale)
   // ============================================================
   const ouvrirModaleAnnulation = () => {
-    setRaisonChoisie(null);
-    setRaisonLibre('');
-    setModalVisible(true);
-  };
+  // Si la réservation est confirmée, on affiche un avertissement
+  // avant d'ouvrir la modale de raison (dissuasif).
+  if (commande.statut === 'confirmée') {
+    Alert.alert(
+      '⚠️ Attention',
+      `Cette ${mots.commande} est déjà confirmée. Le client a peut-être préparé son déplacement.\n\nVoulez-vous vraiment annuler ?`,
+      [
+        { text: 'Non, retour', style: 'cancel' },
+        {
+          text: 'Oui, continuer',
+          style: 'destructive',
+          onPress: () => {
+            setRaisonChoisie(null);
+            setRaisonLibre('');
+            setModalVisible(true);
+          },
+        },
+      ]
+    );
+    return;
+  }
 
+  // Sinon (en_attente), pas d'avertissement
+  setRaisonChoisie(null);
+  setRaisonLibre('');
+  setModalVisible(true);
+};
   const fermerModaleAnnulation = () => {
     setModalVisible(false);
     setRaisonChoisie(null);
@@ -595,7 +615,7 @@ export default function ProOrderDetailScreen({ navigation, route }) {
               Choisissez une raison (obligatoire) :
             </Text>
 
-            {RAISONS_ANNULATION.map((raison) => {
+            {raisonsAnnulation.map((raison) => {
               const selected = raisonChoisie === raison;
               return (
                 <TouchableOpacity
