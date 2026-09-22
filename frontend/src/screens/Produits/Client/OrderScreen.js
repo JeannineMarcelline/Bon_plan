@@ -30,7 +30,8 @@ const { cart, getTotal, clearCart, idEntreprise: idEntreprisePanier } = useCart(
 const produitDirect = route.params?.produitDirect || null;
 const idEntrepriseDirect = route.params?.idEntreprise || null;
 const estModeDirect = produitDirect !== null;
-
+const dateDebutParam = route.params?.dateDebut || null;
+const dateFinParam = route.params?.dateFin || null;
 
 const items = estModeDirect ? [produitDirect] : cart;
 const idEntreprise = estModeDirect ? idEntrepriseDirect : idEntreprisePanier;
@@ -45,14 +46,19 @@ const [notes, setNotes] = useState('');
 const [loading, setLoading] = useState(false);
 const isSubmitting = useRef(false);
 const [categorieEntreprise, setCategorieEntreprise] = useState(null);
-const [dateDebut, setDateDebut] = useState(null);
-const [dateFin, setDateFin] = useState(null);
 const [showPickerDebut, setShowPickerDebut] = useState(false);
 const [showPickerFin, setShowPickerFin] = useState(false);
 const [heureDebut, setHeureDebut] = useState(null);
 const[heureFin, setHeureFin] = useState(null);
 const [showTimePickerDebut, setShowTimePickerDebut] = useState(false);
 const [showTimePickerFin, setShowTimePickerFin] = useState(false);
+
+const [dateDebut, setDateDebut] = useState(
+  dateDebutParam ? new Date(dateDebutParam) : null
+);
+const [dateFin, setDateFin] = useState(
+  dateFinParam ? new Date(dateFinParam) : null
+);
 
 
 const config = getConfigCategorie(categorieEntreprise);
@@ -327,7 +333,67 @@ const { error: ligneError } = await supabase
 
 if (ligneError) throw ligneError;
 
-// Vider le panier UNIQUEMENT en mode panier.
+// ============================================================
+// NOTIFIER LE PROPRIÉTAIRE DE L'ENTREPRISE
+// ============================================================
+// On envoie une notif au pro pour qu'il voie la nouvelle
+// commande/réservation dans sa cloche 🔔 (pas besoin qu'il
+// ouvre "Mes commandes reçues" pour la découvrir).
+try {
+  // 1. Récupérer le propriétaire de l'entreprise
+  const { data: entrepriseData, error: entError } = await supabase
+    .from('entreprises')
+    .select('utilisateur_id, nom')
+    .eq('id', idEntreprise)
+    .maybeSingle();
+
+  if (entError) {
+    console.error('Erreur récup entreprise pour notif:', entError);
+  } else if (entrepriseData?.utilisateur_id) {
+    // 2. Préparer le message
+    const commandeLabel =
+      mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1);
+
+    let messageNotif = '';
+
+    if (besoinDuree) {
+      // Réservation (Hôtel, Cyber, Location...)
+      const debutComplet = combinerDateHeure(dateDebut, heureDebut);
+      const finComplet = combinerDateHeure(dateFin, heureFin);
+      const debutStr = formatDateFr(debutComplet);
+      const finStr = formatDateFr(finComplet);
+      const nomProduit = items[0]?.nom_produit || mots.produit;
+
+      messageNotif = `${commandeLabel} #${reference} — ${nomProduit} du ${debutStr} au ${finStr}`;
+    } else {
+      // Commande (Vente, Restaurant...)
+      const totalItems = items.reduce(
+        (sum, i) => sum + (i.quantite || 1),
+        0
+      );
+      messageNotif = `${commandeLabel} #${reference} — ${totalItems} ${mots.article}${totalItems > 1 ? 's' : ''}`;
+    }
+
+    // 3. Insérer la notification
+    const { error: notifError } = await supabase
+      .from('notifications')
+      .insert({
+        utilisateur_id: entrepriseData.utilisateur_id,
+        titre: `Nouvelle ${mots.commande}`,
+        message: messageNotif,
+        lue: false,
+      });
+
+    if (notifError) {
+      console.error('Erreur création notif pro:', notifError);
+    }
+  }
+} catch (notifErr) {
+  // On n'interrompt pas la commande si la notif échoue
+  console.error('Erreur notif (non bloquant):', notifErr);
+}
+
+
 // En mode direct (réservation hôtel), on n'a jamais touché au panier.
 if (!estModeDirect) {
   const { data: panierData } = await supabase

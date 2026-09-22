@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   TextInput,
   Alert,
   Modal,
+  Platform,
+  FlatList,
 } from 'react-native';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
@@ -21,6 +23,181 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { getConfigCategorie } from '../Config/categorieConfig';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+// ============================================================
+// HELPERS & SOUS-COMPOSANTS MÉMOÏSÉS
+// Isolés du composant principal pour éviter qu'un simple
+// changement d'état (ex: frappe clavier) ne redessine toute
+// la liste des produits/avis et la carte à chaque fois.
+// ============================================================
+
+function renderStars(n, size = 16) {
+  const stars = [];
+  for (let i = 0; i < 5; i++) {
+    stars.push(
+      <Ionicons
+        key={i}
+        name={i < Math.floor(n) ? 'star' : i < n ? 'star-half' : 'star-outline'}
+        size={size}
+        color="#f39c12"
+      />
+    );
+  }
+  return stars;
+}
+
+// La MapView est le composant natif le plus coûteux de l'écran.
+// Avant : elle recevait un objet `region` recréé à chaque render
+// du parent (donc à chaque frappe dans le champ commentaire),
+// ce qui forçait React Native à la re-render inutilement.
+// Ici, elle est isolée et ne se re-render que si lat/lng changent.
+const CompanyMapPreview = memo(function CompanyMapPreview({
+  latitude,
+  longitude,
+  onPress,
+}) {
+  const region = useMemo(
+    () => ({
+      latitude: latitude || -21.4526,
+      longitude: longitude || 47.0855,
+      latitudeDelta: 0.008,
+      longitudeDelta: 0.008,
+    }),
+    [latitude, longitude]
+  );
+
+  return (
+    <TouchableOpacity
+      style={styles.locationCard}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
+      <MapView
+        style={styles.locationMap}
+        scrollEnabled={false}
+        zoomEnabled={false}
+        rotateEnabled={false}
+        pitchEnabled={false}
+        pointerEvents="none"
+        region={region}
+      >
+        {latitude && longitude && (
+          <Marker coordinate={{ latitude, longitude }} />
+        )}
+      </MapView>
+
+      <View style={styles.locationOverlay}>
+        <Ionicons name="navigate" size={14} color="#fff" />
+        <Text style={styles.locationOverlayText}>Voir sur la carte</Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+// Une ligne de produit ne se re-render que si SES props changent,
+// pas quand l'utilisateur tape un commentaire ou change de date.
+const ProductRow = memo(function ProductRow({
+  produit,
+  estComplet,
+  motsProduit,
+  onOpen,
+}) {
+  const handlePress = useCallback(() => {
+    if (estComplet) {
+      Alert.alert(
+        'Non disponible',
+        `"${produit.nom_produit}" est complet à ces dates. Essayez d'autres dates.`
+      );
+      return;
+    }
+    onOpen(produit);
+  }, [estComplet, produit, onOpen]);
+
+  return (
+    <TouchableOpacity
+      style={[styles.produitCard, estComplet && styles.produitRowComplet]}
+      onPress={handlePress}
+      activeOpacity={estComplet ? 1 : 0.7}
+    >
+      {produit.photos_produit && produit.photos_produit.length > 0 ? (
+        <Image
+          source={{ uri: produit.photos_produit[0] }}
+          style={[styles.produitThumb, estComplet && { opacity: 0.4 }]}
+        />
+      ) : (
+        <View
+          style={[
+            styles.produitThumb,
+            styles.produitThumbPlaceholder,
+            estComplet && { opacity: 0.4 },
+          ]}
+        >
+          <Ionicons name="image-outline" size={24} color="#9CA3AF" />
+        </View>
+      )}
+
+      <View style={styles.produitInfo}>
+        <Text
+          style={[styles.produitName, estComplet && { color: '#9CA3AF' }]}
+          numberOfLines={1}
+        >
+          {produit.nom_produit}
+        </Text>
+        <Text style={styles.produitDetails} numberOfLines={1}>
+          {estComplet
+            ? '❌ Complet à ces dates'
+            : produit.description_pro || `${motsProduit} disponible`}
+        </Text>
+      </View>
+
+      <View style={styles.produitPriceBlock}>
+        <Text style={[styles.produitPrice, estComplet && { color: '#9CA3AF' }]}>
+          {Number(produit.prix_produit).toLocaleString('fr-FR')} Ar
+        </Text>
+        <Text style={styles.produitPriceSub}>par unité</Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+// Idem pour les avis : mémoïsés pour ne pas recalculer/re-render
+// toute la liste à chaque changement local du formulaire.
+const AvisItem = memo(function AvisItem({ avis }) {
+  return (
+    <View style={styles.avisItem}>
+      <View style={styles.avisHeader}>
+        <View style={styles.avisAuthorRow}>
+          <View style={styles.avisAvatar}>
+            <Text style={styles.avisAvatarText}>
+              {avis.nom_utilisateur?.charAt(0)?.toUpperCase() || '?'}
+            </Text>
+          </View>
+          <Text style={styles.avisNom}>{avis.nom_utilisateur}</Text>
+        </View>
+        <View style={styles.avisStars}>{renderStars(avis.note, 12)}</View>
+      </View>
+      <Text style={styles.avisCommentaire}>{avis.commentaire}</Text>
+      <Text style={styles.avisDate}>
+        {new Date(avis.date_avis).toLocaleDateString('fr-FR', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+        })}
+      </Text>
+    </View>
+  );
+});
+
+function formatDateFr(date) {
+  if (!date) return null;
+
+  return date.toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 export default function CompanyScreen() {
   const { user } = useAuth();
@@ -40,42 +217,50 @@ export default function CompanyScreen() {
   const [produits, setProduits] = useState([]);
   const [loadingProduits, setLoadingProduits] = useState(true);
 
-  // Modale de détail produit
   const [produitSelectionne, setProduitSelectionne] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [dateDebut, setDateDebut] = useState(null);
+  const [dateFin, setDateFin] = useState(null);
+  const [showPickerDebut, setShowPickerDebut] = useState(false);
+  const [showPickerFin, setShowPickerFin] = useState(false);
+  const [rechercheFaite, setRechercheFaite] = useState(false);
+
 
   const { addToCart } = useCart();
 
-  const config = getConfigCategorie(entreprise?.categorie || null);
+  const config = useMemo(
+    () => getConfigCategorie(entreprise?.categorie || null),
+    [entreprise?.categorie]
+  );
   const mots = config.vocabulaire;
   const besoinDuree = config.besoinDuree;
 
-  // ============================================================
-  // CHARGEMENT PRODUITS
-  // ============================================================
-  const loadProduits = async (entrepriseId) => {
+
+  const loadProduits = useCallback(async (entrepriseId, debut = null, fin = null) => {
     try {
-      const { data, error } = await supabase
-        .from('produits')
-        .select('*')
-        .eq('id_entreprise', entrepriseId)
-        .eq('actif', true)
-        .gt('stock', 0)
-        .order('created_at', { ascending: false });
+
+      setLoadingProduits(true);
+
+      const {data, error} = await supabase.rpc(
+        'produits_disponibles_pour_dates',{
+          p_id_entreprise: entrepriseId,
+          p_date_debut: debut ? debut.toISOString() : null,
+          p_date_fin : fin ? fin.toISOString() : null,
+        }
+      );
 
       if (error) throw error;
+
       setProduits(data || []);
+
     } catch (error) {
       console.error('Erreur chargement produits:', error);
     } finally {
       setLoadingProduits(false);
     }
-  };
+  }, []);
 
-  // ============================================================
-  // CHARGEMENT AVIS
-  // ============================================================
-  const loadAvis = async (entrepriseId) => {
+  const loadAvis = useCallback(async (entrepriseId) => {
     try {
       const { data, error } = await supabase
         .from('avis')
@@ -102,12 +287,9 @@ export default function CompanyScreen() {
     } catch (error) {
       console.error('Erreur chargement avis:', error);
     }
-  };
+  }, []);
 
-  // ============================================================
-  // SOUMETTRE UN AVIS
-  // ============================================================
-  const submitAvis = async () => {
+  const submitAvis = useCallback(async () => {
     if (!user) {
       Alert.alert('Erreur', 'Vous devez être connecté pour laisser un avis');
       return;
@@ -137,62 +319,100 @@ export default function CompanyScreen() {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [user, note, commentaire, entreprise, loadAvis]);
 
-  // ============================================================
-  // PARTAGER WHATSAPP
-  // ============================================================
-  const shareWhatsApp = () => {
+
+  const shareWhatsApp = useCallback(() => {
     const message = `🏢 *${entreprise.nom}*\nAdresse : ${entreprise.adresse}\nTéléphone : ${entreprise.telephone}\nNote : ${noteMoyenne.toFixed(1)}/5\n\n`;
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
     Linking.openURL(url).catch(() => {
       Alert.alert('Erreur', "WhatsApp n'est pas installé");
     });
-  };
+  }, [entreprise, noteMoyenne]);
 
-  // ============================================================
-  // ITINÉRAIRE
-  // ============================================================
-  const openItineraire = () => {
+  const openItineraire = useCallback(() => {
     const url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation?.latitude || ''},${userLocation?.longitude || ''}&destination=${entreprise.latitude || -21.4526},${entreprise.longitude || 47.0855}`;
     Linking.openURL(url);
-  };
+  }, [userLocation, entreprise]);
 
-  // ============================================================
-  // MODALE PRODUIT
-  // ============================================================
-  const ouvrirModale = (produit) => {
+  const onChangeDateDebut = useCallback((event, selectedDate) => {
+  if (Platform.OS === 'android') setShowPickerDebut(false);
+  if (event.type === 'dismissed') return;
+  if (selectedDate) {
+    setDateDebut(selectedDate);
+
+    setDateFin((prevFin) => (prevFin && prevFin < selectedDate ? null : prevFin));
+  }
+ }, []);
+
+ const onChangeDateFin = useCallback((event, selectedDate) => {
+  if(Platform.OS === 'android') setShowPickerFin(false);
+  if(event.type === 'dismissed') return;
+  if(selectedDate) setDateFin(selectedDate);
+}, []);
+
+const handleRechercher = useCallback(async () => {
+  if(!dateDebut || !dateFin) {
+    Alert.alert(
+      'Dates manquantes',
+      'Veuillez sélectionner la date de début et la date de fin '
+    );
+    return;
+  }
+
+ if(dateFin < dateDebut) {
+  Alert.alert('Date incohérentes', 'La date de fin doit être après la date de début');
+  return;
+ }
+
+ setRechercheFaite(true);
+ await loadProduits(entreprise.id, dateDebut, dateFin);
+
+}, [dateDebut, dateFin, entreprise, loadProduits]);
+
+const effacerRecherche = useCallback(async () => {
+  setDateDebut(null);
+  setDateFin(null);
+  setRechercheFaite(false);
+  await loadProduits(entreprise.id);
+}, [entreprise, loadProduits]);
+
+
+  const ouvrirModale = useCallback((produit) => {
     setProduitSelectionne(produit);
     setModalVisible(true);
-  };
+  }, []);
 
-  const fermerModale = () => {
+  const fermerModale = useCallback(() => {
     setModalVisible(false);
     setProduitSelectionne(null);
-  };
+  }, []);
 
-  const handleActionProduit = (produit) => {
-    if (besoinDuree) {
-      fermerModale();
-      navigation.navigate('Order', {
-        produitDirect: {
-          id: produit.id,
-          nom_produit: produit.nom_produit,
-          prix_produit: produit.prix_produit,
-          quantite: 1,
-          photos_produit: produit.photos_produit,
-        },
-        idEntreprise: entreprise.id,
-      });
-    } else {
-      addToCart(produit);
-      fermerModale();
-      Alert.alert(
-        '🛒 Ajouté',
-        `${produit.nom_produit} a été ajouté à votre ${mots.panier}`
-      );
-    }
-  };
+const handleActionProduit = useCallback((produit) => {
+  if (besoinDuree) {
+    fermerModale();
+    navigation.navigate('Order', {
+      produitDirect: {
+        id: produit.id,
+        nom_produit: produit.nom_produit,
+        prix_produit: produit.prix_produit,
+        quantite: 1,
+        photos_produit: produit.photos_produit,
+      },
+      idEntreprise: entreprise.id,
+      // On passe les dates si elles ont été choisies
+      dateDebut: dateDebut ? dateDebut.toISOString() : null,
+      dateFin: dateFin ? dateFin.toISOString() : null,
+    });
+  } else {
+    addToCart(produit);
+    fermerModale();
+    Alert.alert(
+      '🛒 Ajouté',
+      `${produit.nom_produit} a été ajouté à votre ${mots.panier}`
+    );
+  }
+}, [besoinDuree, navigation, entreprise, dateDebut, dateFin, addToCart, mots, fermerModale]);
 
   // ============================================================
   // CHARGEMENT ENTREPRISE
@@ -215,8 +435,10 @@ export default function CompanyScreen() {
             categorie: data.categories?.nom || '',
           };
           setEntreprise(e);
-          await loadAvis(e.id);
-          await loadProduits(e.id);
+          // Avis et produits ne dépendent pas l'un de l'autre :
+          // on les charge en parallèle plutôt qu'en série pour
+          // diviser le temps d'attente par ~2.
+          await Promise.all([loadAvis(e.id), loadProduits(e.id)]);
         }
       } catch (error) {
         console.error('Erreur chargement entreprise:', error);
@@ -225,13 +447,15 @@ export default function CompanyScreen() {
       }
     };
     loadCompany();
-  }, [id]);
+  }, [id, loadAvis, loadProduits]);
 
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      const location = await Location.getCurrentPositionAsync({});
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
       setUserLocation({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -239,25 +463,19 @@ export default function CompanyScreen() {
     })();
   }, []);
 
-  // ============================================================
-  // ÉTOILES
-  // ============================================================
-  const renderStars = (n, size = 16) => {
-    let stars = [];
-    for (let i = 0; i < 5; i++) {
-      stars.push(
-        <Ionicons
-          key={i}
-          name={
-            i < Math.floor(n) ? 'star' : i < n ? 'star-half' : 'star-outline'
-          }
-          size={size}
-          color="#f39c12"
-        />
-      );
-    }
-    return stars;
-  };
+  const keyExtractorProduit = useCallback((item) => String(item.id), []);
+
+  const renderProduitItem = useCallback(
+    ({ item }) => (
+      <ProductRow
+        produit={item}
+        estComplet={rechercheFaite && (item.places_restantes || 0) <= 0}
+        motsProduit={mots.produit}
+        onOpen={ouvrirModale}
+      />
+    ),
+    [rechercheFaite, mots.produit, ouvrirModale]
+  );
 
   if (loading) {
     return (
@@ -277,383 +495,373 @@ export default function CompanyScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* ============================================================
-            IMAGE DE COUVERTURE
-            ============================================================ */}
-        <View style={styles.imageContainer}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </TouchableOpacity>
-          <Image
-            source={{
-              uri: entreprise.logo || 'https://via.placeholder.com/400x300',
-            }}
-            style={styles.image}
-          />
-          <View style={styles.imageOverlay} />
-        </View>
-
-        {/* ============================================================
-            EN-TÊTE : Nom + catégorie + note
-            ============================================================ */}
-        <View style={styles.headerSection}>
-          <Text style={styles.nom}>{entreprise.nom}</Text>
-          <Text style={styles.categorie}>{entreprise.categorie}</Text>
-
-          <View style={styles.ratingRow}>
-            <View style={styles.starsRow}>{renderStars(noteMoyenne, 16)}</View>
-            <Text style={styles.ratingText}>({nbAvis} avis)</Text>
-          </View>
-
-          {/* Boutons d'action */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => Linking.openURL(`tel:${entreprise.telephone}`)}
-            >
-              <Ionicons name="call-outline" size={20} color="#2563EB" />
-              <Text style={styles.actionBtnText}>Appeler</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionBtn} onPress={openItineraire}>
-              <Ionicons name="navigate-outline" size={20} color="#2563EB" />
-              <Text style={styles.actionBtnText}>Itinéraire</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={shareWhatsApp}
-            >
-              <Ionicons
-                name="share-social-outline"
-                size={20}
-                color="#10B981"
-              />
-              <Text style={[styles.actionBtnText, { color: '#10B981' }]}>
-                Partager
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ============================================================
-            DESCRIPTION
-            ============================================================ */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Description</Text>
-            <Text style={styles.cardText}>
-              {entreprise.description || 'Aucune description fournie.'}
-            </Text>
-          </View>
-        </View>
-
-        {/* ============================================================
-            INFORMATIONS (avec icônes + label + valeur)
-            ============================================================ */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Informations</Text>
-
-            <View style={styles.infoRow}>
-              <Ionicons
-                name="location-outline"
-                size={18}
-                color="#6B7280"
-                style={styles.infoIcon}
-              />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Adresse</Text>
-                <Text style={styles.infoValue}>
-                  {entreprise.adresse || 'Non renseignée'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Ionicons
-                name="call-outline"
-                size={18}
-                color="#6B7280"
-                style={styles.infoIcon}
-              />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Téléphone</Text>
-                <Text style={styles.infoValue}>
-                  {entreprise.telephone || 'Non renseigné'}
-                </Text>
-              </View>
-            </View>
-
-            {entreprise.email ? (
-              <View style={styles.infoRow}>
-                <Ionicons
-                  name="mail-outline"
-                  size={18}
-                  color="#6B7280"
-                  style={styles.infoIcon}
-                />
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Email</Text>
-                  <Text style={styles.infoValue}>{entreprise.email}</Text>
-                </View>
-              </View>
-            ) : null}
-
-            {entreprise.siteWeb ? (
+      <FlatList
+        data={produits}
+        keyExtractor={keyExtractorProduit}
+        renderItem={renderProduitItem}
+        showsVerticalScrollIndicator={false}
+        // ---- Réglages de virtualisation ----
+        // Seuls les produits proches de l'écran sont montés en mémoire ;
+        // le reste est "recyclé" au fil du scroll, comme une vraie liste native.
+        removeClippedSubviews={Platform.OS === 'android'}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        ListHeaderComponent={
+          <>
+            <View style={styles.imageContainer}>
               <TouchableOpacity
-                style={[styles.infoRow, { borderBottomWidth: 0 }]}
-                onPress={() =>
-                  Linking.openURL(`https://${entreprise.siteWeb}`)
-                }
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
               >
-                <Ionicons
-                  name="globe-outline"
-                  size={18}
-                  color="#6B7280"
-                  style={styles.infoIcon}
+                <Ionicons name="arrow-back" size={22} color="#fff" />
+              </TouchableOpacity>
+              <Image
+                source={{
+                  uri: entreprise.logo || 'https://via.placeholder.com/400x300',
+                }}
+                style={styles.image}
+              />
+              <View style={styles.imageOverlay} />
+            </View>
+
+            <View style={styles.headerSection}>
+              <Text style={styles.nom}>{entreprise.nom}</Text>
+              <Text style={styles.categorie}>{entreprise.categorie}</Text>
+
+              <View style={styles.ratingRow}>
+                <View style={styles.starsRow}>{renderStars(noteMoyenne, 16)}</View>
+                <Text style={styles.ratingText}>({nbAvis} avis)</Text>
+              </View>
+
+              {/* Boutons d'action */}
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => Linking.openURL(`tel:${entreprise.telephone}`)}
+                >
+                  <Ionicons name="call-outline" size={20} color="#2563EB" />
+                  <Text style={styles.actionBtnText}>Appeler</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionBtn} onPress={openItineraire}>
+                  <Ionicons name="navigate-outline" size={20} color="#2563EB" />
+                  <Text style={styles.actionBtnText}>Itinéraire</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={shareWhatsApp}
+                >
+                  <Ionicons
+                    name="share-social-outline"
+                    size={20}
+                    color="#10B981"
+                  />
+                  <Text style={[styles.actionBtnText, { color: '#10B981' }]}>
+                    Partager
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Description</Text>
+                <Text style={styles.cardText}>
+                  {entreprise.description || 'Aucune description fournie.'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Informations</Text>
+
+                <View style={styles.infoRow}>
+                  <Ionicons
+                    name="location-outline"
+                    size={18}
+                    color="#6B7280"
+                    style={styles.infoIcon}
+                  />
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Adresse</Text>
+                    <Text style={styles.infoValue}>
+                      {entreprise.adresse || 'Non renseignée'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.infoRow}>
+                  <Ionicons
+                    name="call-outline"
+                    size={18}
+                    color="#6B7280"
+                    style={styles.infoIcon}
+                  />
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Téléphone</Text>
+                    <Text style={styles.infoValue}>
+                      {entreprise.telephone || 'Non renseigné'}
+                    </Text>
+                  </View>
+                </View>
+
+                {entreprise.email ? (
+                  <View style={styles.infoRow}>
+                    <Ionicons
+                      name="mail-outline"
+                      size={18}
+                      color="#6B7280"
+                      style={styles.infoIcon}
+                    />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Email</Text>
+                      <Text style={styles.infoValue}>{entreprise.email}</Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                {entreprise.siteWeb ? (
+                  <TouchableOpacity
+                    style={[styles.infoRow, { borderBottomWidth: 0 }]}
+                    onPress={() =>
+                      Linking.openURL(`https://${entreprise.siteWeb}`)
+                    }
+                  >
+                    <Ionicons
+                      name="globe-outline"
+                      size={18}
+                      color="#6B7280"
+                      style={styles.infoIcon}
+                    />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Site web</Text>
+                      <Text style={[styles.infoValue, { color: '#2563EB' }]}>
+                        {entreprise.siteWeb}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Localisation</Text>
+
+                {/* Carte mémoïsée : ne se re-render jamais à cause
+                    d'un changement d'état ailleurs sur l'écran */}
+                <CompanyMapPreview
+                  latitude={entreprise.latitude}
+                  longitude={entreprise.longitude}
+                  onPress={openItineraire}
                 />
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Site web</Text>
-                  <Text style={[styles.infoValue, { color: '#2563EB' }]}>
-                    {entreprise.siteWeb}
+
+                <View style={styles.locationAddressRow}>
+                  <Ionicons name="location" size={16} color="#EF4444" />
+                  <Text style={styles.locationAddressText} numberOfLines={2}>
+                    {entreprise.adresse || 'Adresse non renseignée'}
                   </Text>
                 </View>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </View>
-        {/* ============================================================
-            LOCALISATION (vignette cliquable)
-            ============================================================ */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Localisation</Text>
-
-            {/* Vignette de carte cliquable */}
-            <TouchableOpacity
-              style={styles.locationCard}
-              onPress={openItineraire}
-              activeOpacity={0.85}
-            >
-              <MapView
-                style={styles.locationMap}
-                scrollEnabled={false}
-                zoomEnabled={false}
-                rotateEnabled={false}
-                pitchEnabled={false}
-                pointerEvents="none"
-                region={{
-                  latitude: entreprise.latitude || -21.4526,
-                  longitude: entreprise.longitude || 47.0855,
-                  latitudeDelta: 0.008,
-                  longitudeDelta: 0.008,
-                }}
-              >
-                {entreprise.latitude && entreprise.longitude && (
-                  <Marker
-                    coordinate={{
-                      latitude: entreprise.latitude,
-                      longitude: entreprise.longitude,
-                    }}
-                  />
-                )}
-              </MapView>
-
-              {/* Overlay "Voir sur la carte" */}
-              <View style={styles.locationOverlay}>
-                <Ionicons name="navigate" size={14} color="#fff" />
-                <Text style={styles.locationOverlayText}>
-                  Voir sur la carte
-                </Text>
               </View>
-            </TouchableOpacity>
-
-            {/* Adresse en dessous */}
-            <View style={styles.locationAddressRow}>
-              <Ionicons name="location" size={16} color="#EF4444" />
-              <Text style={styles.locationAddressText} numberOfLines={2}>
-                {entreprise.adresse || 'Adresse non renseignée'}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ============================================================
-            CHAMBRES / PRODUITS
-            Liste verticale avec photo à gauche (comme le modèle)
-            ============================================================ */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <View style={styles.produitsHeader}>
-              <Text style={styles.cardTitle}>
-                {mots.produitPluriel.charAt(0).toUpperCase() +
-                  mots.produitPluriel.slice(1)}
-              </Text>
-              <Text style={styles.produitsCount}>
-                {produits.length} type{produits.length > 1 ? 's' : ''}
-              </Text>
             </View>
 
+            {/* ----- En-tête de la section produits + sélecteur de dates -----
+                Les lignes de produits elles-mêmes sont gérées par la FlatList
+                (data/renderItem) juste en dessous, pour être virtualisées. */}
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <View style={styles.produitsHeader}>
+                  <Text style={styles.cardTitle}>
+                    {mots.produitPluriel.charAt(0).toUpperCase() +
+                      mots.produitPluriel.slice(1)}
+                  </Text>
+                  <Text style={styles.produitsCount}>
+                    {produits.length} type{produits.length > 1 ? 's' : ''}
+                  </Text>
+                </View>
+
+                {besoinDuree && (
+                  <View style={styles.dateSelectorBox}>
+                    <Text style={styles.dateSelectorTitle}>
+                      Quand voulez-vous venir ?
+                    </Text>
+
+                    <View style={styles.dateSelectorRow}>
+                      <TouchableOpacity
+                        style={styles.dateBtn}
+                        onPress={() => setShowPickerDebut(true)}
+                      >
+                        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+                        <Text
+                          style={[
+                            styles.dateBtnText,
+                            !dateDebut && styles.dateBtnPlaceholder,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {dateDebut ? formatDateFr(dateDebut) : 'Arrivée'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.dateBtn}
+                        onPress={() => {
+                          if (!dateDebut) {
+                            Alert.alert(
+                              "Choisissez d'abord la date d'arrivée",
+                              'Sélectionnez la date de début avant la date de fin.'
+                            );
+                            return;
+                          }
+                          setShowPickerFin(true);
+                        }}
+                      >
+                        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+                        <Text
+                          style={[
+                            styles.dateBtnText,
+                            !dateFin && styles.dateBtnPlaceholder,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {dateFin ? formatDateFr(dateFin) : 'Départ'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.searchBtn}
+                        onPress={handleRechercher}
+                      >
+                        <Ionicons name="search" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+
+                    {rechercheFaite && (
+                      <TouchableOpacity
+                        style={styles.clearSearchBtn}
+                        onPress={effacerRecherche}
+                      >
+                        <Ionicons name="close-circle-outline" size={14} color="#6B7280" />
+                        <Text style={styles.clearSearchText}>
+                          Effacer les dates et voir tout
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {showPickerDebut && (
+                      <DateTimePicker
+                        value={dateDebut || new Date()}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        minimumDate={new Date()}
+                        onChange={onChangeDateDebut}
+                      />
+                    )}
+
+                    {showPickerFin && (
+                      <DateTimePicker
+                        value={dateFin || dateDebut || new Date()}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        minimumDate={dateDebut || new Date()}
+                        onChange={onChangeDateFin}
+                      />
+                    )}
+                  </View>
+                )}
+              </View>
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          <View style={styles.produitsStatusBox}>
             {loadingProduits ? (
               <ActivityIndicator size="small" color="#1E3A5F" />
-            ) : produits.length === 0 ? (
+            ) : (
               <Text style={styles.emptyText}>
                 Aucun{mots.produit === 'produit' ? '' : 'e'} {mots.produit}{' '}
                 disponible
               </Text>
-            ) : (
-              produits.map((produit, index) => (
-                <TouchableOpacity
-                  key={produit.id}
-                  style={[
-                    styles.produitRow,
-                    index === produits.length - 1 && { borderBottomWidth: 0 },
-                  ]}
-                  onPress={() => ouvrirModale(produit)}
-                  activeOpacity={0.7}
-                >
-                  {/* Image à gauche */}
-                  {produit.photos_produit &&
-                  produit.photos_produit.length > 0 ? (
-                    <Image
-                      source={{ uri: produit.photos_produit[0] }}
-                      style={styles.produitThumb}
-                    />
-                  ) : (
-                    <View
-                      style={[
-                        styles.produitThumb,
-                        styles.produitThumbPlaceholder,
-                      ]}
-                    >
-                      <Ionicons name="image-outline" size={24} color="#9CA3AF" />
-                    </View>
-                  )}
-
-                  {/* Infos à droite */}
-                  <View style={styles.produitInfo}>
-                    <Text style={styles.produitName} numberOfLines={1}>
-                      {produit.nom_produit}
-                    </Text>
-                    <Text style={styles.produitDetails} numberOfLines={1}>
-                      {produit.description_pro || `${mots.produit} disponible`}
-                    </Text>
-                  </View>
-
-                  {/* Prix à droite */}
-                  <View style={styles.produitPriceBlock}>
-                    <Text style={styles.produitPrice}>
-                      {Number(produit.prix_produit).toLocaleString('fr-FR')} Ar
-                    </Text>
-                    <Text style={styles.produitPriceSub}>par unité</Text>
-                  </View>
-                </TouchableOpacity>
-              ))
             )}
           </View>
-        </View>
+        }
+        ListFooterComponent={
+          <>
+            {/* ============================================================
+                AVIS (discrets en bas)
+                ============================================================ */}
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Avis des clients ({nbAvis})</Text>
 
-        {/* ============================================================
-            AVIS (discrets en bas)
-            ============================================================ */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Avis des clients ({nbAvis})</Text>
-
-            {/* Formulaire compact */}
-            {user && (
-              <View style={styles.avisForm}>
-                <View style={styles.avisStarsInput}>
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <TouchableOpacity key={s} onPress={() => setNote(s)}>
-                      <Ionicons
-                        name={s <= note ? 'star' : 'star-outline'}
-                        size={26}
-                        color={s <= note ? '#f39c12' : '#D1D5DB'}
-                      />
+                {user && (
+                  <View style={styles.avisForm}>
+                    <View style={styles.avisStarsInput}>
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <TouchableOpacity key={s} onPress={() => setNote(s)}>
+                          <Ionicons
+                            name={s <= note ? 'star' : 'star-outline'}
+                            size={26}
+                            color={s <= note ? '#f39c12' : '#D1D5DB'}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <TextInput
+                      style={styles.commentInput}
+                      placeholder="Partagez votre expérience..."
+                      placeholderTextColor="#9CA3AF"
+                      value={commentaire}
+                      onChangeText={setCommentaire}
+                      multiline
+                      numberOfLines={2}
+                    />
+                    <TouchableOpacity
+                      style={styles.submitButton}
+                      onPress={submitAvis}
+                      disabled={submitting}
+                    >
+                      <Text style={styles.submitButtonText}>
+                        {submitting ? 'Envoi...' : 'Envoyer mon avis'}
+                      </Text>
                     </TouchableOpacity>
-                  ))}
-                </View>
-                <TextInput
-                  style={styles.commentInput}
-                  placeholder="Partagez votre expérience..."
-                  placeholderTextColor="#9CA3AF"
-                  value={commentaire}
-                  onChangeText={setCommentaire}
-                  multiline
-                  numberOfLines={2}
-                />
+                  </View>
+                )}
+
+                {avisList.length === 0 ? (
+                  <Text style={styles.emptyText}>Aucun avis pour le moment</Text>
+                ) : (
+                  avisList.map((avis) => (
+                    <AvisItem key={avis.id_avis} avis={avis} />
+                  ))
+                )}
+              </View>
+            </View>
+
+            {entreprise.categorie?.toLowerCase() === 'transport' && (
+              <View style={styles.section}>
                 <TouchableOpacity
-                  style={styles.submitButton}
-                  onPress={submitAvis}
-                  disabled={submitting}
+                  style={styles.vehiculeButton}
+                  onPress={() =>
+                    navigation.navigate('CompanyVehicules', {
+                      idEntreprise: entreprise.id,
+                    })
+                  }
                 >
-                  <Text style={styles.submitButtonText}>
-                    {submitting ? 'Envoi...' : 'Envoyer mon avis'}
-                  </Text>
+                  <Ionicons name="bus-outline" size={22} color="#fff" />
+                  <Text style={styles.vehiculeButtonText}>Voir les véhicules</Text>
                 </TouchableOpacity>
               </View>
             )}
 
-            {/* Liste des avis */}
-            {avisList.length === 0 ? (
-              <Text style={styles.emptyText}>Aucun avis pour le moment</Text>
-            ) : (
-              avisList.map((avis) => (
-                <View key={avis.id_avis} style={styles.avisItem}>
-                  <View style={styles.avisHeader}>
-                    <View style={styles.avisAuthorRow}>
-                      <View style={styles.avisAvatar}>
-                        <Text style={styles.avisAvatarText}>
-                          {avis.nom_utilisateur?.charAt(0)?.toUpperCase() || '?'}
-                        </Text>
-                      </View>
-                      <Text style={styles.avisNom}>{avis.nom_utilisateur}</Text>
-                    </View>
-                    <View style={styles.avisStars}>
-                      {renderStars(avis.note, 12)}
-                    </View>
-                  </View>
-                  <Text style={styles.avisCommentaire}>{avis.commentaire}</Text>
-                  <Text style={styles.avisDate}>
-                    {new Date(avis.date_avis).toLocaleDateString('fr-FR', {
-                      day: '2-digit',
-                      month: 'long',
-                      year: 'numeric',
-                    })}
-                  </Text>
-                </View>
-              ))
-            )}
-          </View>
-        </View>
-
-        {/* ============================================================
-            SECTION TRANSPORT (spécifique)
-            ============================================================ */}
-        {entreprise.categorie?.toLowerCase() === 'transport' && (
-          <View style={styles.section}>
-            <TouchableOpacity
-              style={styles.vehiculeButton}
-              onPress={() =>
-                navigation.navigate('CompanyVehicules', {
-                  idEntreprise: entreprise.id,
-                })
-              }
-            >
-              <Ionicons name="bus-outline" size={22} color="#fff" />
-              <Text style={styles.vehiculeButtonText}>Voir les véhicules</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <View style={{ height: 30 }} />
-      </ScrollView>
+            <View style={{ height: 30 }} />
+          </>
+        }
+      />
 
       {/* ============================================================
           MODALE DE DÉTAIL PRODUIT
@@ -675,7 +883,6 @@ export default function CompanyScreen() {
                   <Ionicons name="close" size={20} color="#fff" />
                 </TouchableOpacity>
 
-                {/* Image */}
                 {produitSelectionne.photos_produit &&
                 produitSelectionne.photos_produit.length > 0 ? (
                   <Image
@@ -851,13 +1058,24 @@ const styles = StyleSheet.create({
   },
   produitsCount: { fontSize: 12, color: '#9CA3AF' },
 
-  produitRow: {
+  produitCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
     gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  produitsStatusBox: {
+    paddingHorizontal: 32,
+    paddingTop: 12,
   },
   produitThumb: {
     width: 60,
@@ -1096,4 +1314,68 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     lineHeight: 18,
   },
+  // ---------- SÉLECTEUR DE DATES ----------
+dateSelectorBox: {
+  backgroundColor: '#F9FAFB',
+  borderRadius: 12,
+  padding: 12,
+  marginBottom: 14,
+  borderWidth: 1,
+  borderColor: '#E5E7EB',
+},
+dateSelectorTitle: {
+  fontSize: 13,
+  fontWeight: '600',
+  color: '#374151',
+  marginBottom: 8,
+},
+dateSelectorRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+},
+dateBtn: {
+  flex: 1,
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  backgroundColor: '#fff',
+  borderWidth: 1,
+  borderColor: '#D1D5DB',
+  borderRadius: 10,
+  paddingHorizontal: 10,
+  paddingVertical: 10,
+},
+dateBtnText: {
+  fontSize: 13,
+  color: '#111827',
+  flex: 1,
+},
+dateBtnPlaceholder: {
+  color: '#9CA3AF',
+},
+searchBtn: {
+  width: 42,
+  height: 42,
+  borderRadius: 10,
+  backgroundColor: '#2563EB',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+clearSearchBtn: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 4,
+  alignSelf: 'center',
+  marginTop: 10,
+  paddingVertical: 4,
+},
+clearSearchText: {
+  fontSize: 12,
+  color: '#6B7280',
+  textDecorationLine: 'underline',
+},
+produitRowComplet: {
+  opacity: 0.6,
+},
 });
