@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,49 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../lib/supabase';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getConfigCategorie } from '../../../Config/categorieConfig';
+import {  formatDateHeure } from '../../../lib/formatDate';
 
+
+
+const STATUTS = {
+  en_attente: {
+    label: 'En attente',
+    color: '#F59E0B',
+    bgColor: '#FEF3C7',
+    icon: 'time-outline',
+    suivant: 'confirmée',
+  },
+  confirmée: {
+    label: 'Confirmée',
+    color: '#3B82F6',
+    bgColor: '#DBEAFE',
+    icon: 'checkmark-circle-outline',
+    suivant: 'expédiée',   // sera null pour les catégories à durée (calculé après)
+  },
+  expédiée: {
+    label: 'Expédiée',
+    color: '#8B5CF6',
+    bgColor: '#EDE9FE',
+    icon: 'rocket-outline',
+    suivant: 'livrée',
+  },
+  livrée: {
+    label: 'Livrée',
+    color: '#10B981',
+    bgColor: '#D1FAE5',
+    icon: 'checkmark-done-circle-outline',
+    suivant: null,
+  },
+  annulée: {
+    label: 'Annulée',
+    color: '#EF4444',
+    bgColor: '#FEE2E2',
+    icon: 'close-circle-outline',
+    suivant: null,
+  },
+};
+
+const STATUTS_ANNULABLES = ['en_attente', 'confirmée'];
 
 export default function ProOrderDetailScreen({ navigation, route }) {
   const { commandeId } = route.params;
@@ -30,62 +72,21 @@ export default function ProOrderDetailScreen({ navigation, route }) {
   const [raisonChoisie, setRaisonChoisie] = useState(null);
   const [raisonLibre, setRaisonLibre] = useState('');
 
-  // Toute la logique "cette catégorie a besoin de quoi" vient d'un seul
-  // endroit centralisé (Config/categorieConfig.js), pas codée ici en dur.
-  const config = getConfigCategorie(categorieEntreprise);
+
+  const config = useMemo(
+    () => getConfigCategorie(categorieEntreprise),
+    [categorieEntreprise]
+  );
   const besoinAdresse = config.besoinAdresse;
   const besoinDuree = config.besoinDuree;
   const mots = config.vocabulaire;
+  const raisonsAnnulation = config.raisonsAnnulation || [
+    'Erreur de prix',
+    'Indisponibilité',
+    'Autre',
+  ];
 
-  // Raisons d'annulation adaptées à la catégorie
-const raisonsAnnulation = config.raisonsAnnulation || [
-  'Erreur de prix',
-  'Indisponibilité',
-  'Autre',
-];
-
-  const STATUTS = {
-    en_attente: {
-      label: 'En attente',
-      color: '#F59E0B',
-      bgColor: '#FEF3C7',
-      icon: 'time-outline',
-      suivant: 'confirmée',
-    },
-    confirmée: {
-      label: 'Confirmée',
-      color: '#3B82F6',
-      bgColor: '#DBEAFE',
-      icon: 'checkmark-circle-outline',
-      suivant: besoinDuree ? null : 'expédiée',
-    },
-    expédiée: {
-      label: 'Expédiée',
-      color: '#8B5CF6',
-      bgColor: '#EDE9FE',
-      icon: 'rocket-outline',
-      suivant: 'livrée',
-    },
-    livrée: {
-      label: 'Livrée ✅',
-      color: '#10B981',
-      bgColor: '#D1FAE5',
-      icon: 'checkmark-done-circle-outline',
-      suivant: null,
-    },
-    annulée: {
-      label: 'Annulée ❌',
-      color: '#EF4444',
-      bgColor: '#FEE2E2',
-      icon: 'close-circle-outline',
-      suivant: null,
-    },
-  };
-
-  // Statuts sur lesquels le pro peut encore annuler
-  const STATUTS_ANNULABLES = ['en_attente', 'confirmée'];
-
-  const loadCommande = async () => {
+  const loadCommande = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('commande')
@@ -103,6 +104,9 @@ const raisonsAnnulation = config.raisonsAnnulation || [
           telephone_livraison,
           notes,
           mode_paiement,
+          paye,
+          mode_paiement_reel,
+          date_paiement,
           raison_annulation,
           utilisateurs:utilisateurs!commande_id_client_fkey (
             nom,
@@ -116,7 +120,6 @@ const raisonsAnnulation = config.raisonsAnnulation || [
             produits (
               id,
               nom_produit,
-              photos_produit,
               prix_produit
             )
           )
@@ -128,70 +131,50 @@ const raisonsAnnulation = config.raisonsAnnulation || [
       setCommande(data);
 
       if (data?.id_entreprise) {
-        const { data: entrepriseData, error: entError } = await supabase
+        const { data: entData } = await supabase
           .from('entreprises')
           .select('categories (nom)')
           .eq('id', data.id_entreprise)
           .maybeSingle();
-
-        if (entError) {
-          console.error('Erreur chargement catégorie entreprise:', entError);
-        } else {
-          setCategorieEntreprise(entrepriseData?.categories?.nom || null);
-        }
+        setCategorieEntreprise(entData?.categories?.nom || null);
       }
     } catch (error) {
-      console.error('Erreur chargement détail commande:', error);
+      console.error('Erreur chargement commande:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [commandeId]);
 
   useEffect(() => {
     loadCommande();
-  }, []);
+  }, [loadCommande]);
 
-  // ============================================================
-  // CHANGEMENT DE STATUT (prochain statut uniquement)
-  // ============================================================
   const changerStatut = async (nouveauStatut) => {
     const statutInfo = STATUTS[nouveauStatut];
     if (!statutInfo) return;
 
-    // Vérif stock si passage à "confirmée"
+    // Vérification du stock si passage à "confirmée"
     if (nouveauStatut === 'confirmée') {
-      const { data: commandeData, error: commandeError } = await supabase
+      const { data, error } = await supabase
         .from('commande')
-        .select(`
-          ligne_commande (
-            id_produit,
-            quantite,
-            produits (nom_produit, stock)
-          )
-        `)
+        .select(`ligne_commande (quantite, produits (nom_produit, stock))`)
         .eq('id_commande', commandeId)
         .single();
 
-      if (commandeError) {
+      if (error) {
         Alert.alert('Erreur', 'Impossible de vérifier le stock.');
         return;
       }
 
-      let stockInsuffisant = false;
-      let message = '';
-      for (const ligne of commandeData.ligne_commande || []) {
+      for (const ligne of data?.ligne_commande || []) {
         const stockActuel = ligne.produits?.stock || 0;
-        const nomProduit = ligne.produits?.nom_produit || 'Produit';
         if (stockActuel < ligne.quantite) {
-          stockInsuffisant = true;
-          message = `"${nomProduit}" : stock disponible ${stockActuel}, commandé ${ligne.quantite}`;
-          break;
+          Alert.alert(
+            'Stock insuffisant',
+            `"${ligne.produits?.nom_produit}" : stock ${stockActuel}, commandé ${ligne.quantite}`
+          );
+          return;
         }
-      }
-
-      if (stockInsuffisant) {
-        Alert.alert('⚠️ Stock insuffisant', message);
-        return;
       }
     }
 
@@ -205,17 +188,15 @@ const raisonsAnnulation = config.raisonsAnnulation || [
           onPress: async () => {
             setUpdating(true);
             try {
-              // 1. Décrémenter le stock si passage à "confirmée"
+              // Décrémenter le stock si confirmée
               if (nouveauStatut === 'confirmée') {
-                const { data: commandeData, error: commandeError } = await supabase
+                const { data } = await supabase
                   .from('commande')
                   .select(`ligne_commande (id_produit, quantite)`)
                   .eq('id_commande', commandeId)
                   .single();
 
-                if (commandeError) throw commandeError;
-
-                for (const ligne of commandeData.ligne_commande || []) {
+                for (const ligne of data?.ligne_commande || []) {
                   await supabase.rpc('decrementer_stock', {
                     p_produit_id: ligne.id_produit,
                     p_quantite: ligne.quantite,
@@ -223,7 +204,7 @@ const raisonsAnnulation = config.raisonsAnnulation || [
                 }
               }
 
-              // 2. Mettre à jour le statut
+              // Mettre à jour le statut
               const { error } = await supabase
                 .from('commande')
                 .update({ statut: nouveauStatut })
@@ -231,18 +212,14 @@ const raisonsAnnulation = config.raisonsAnnulation || [
 
               if (error) throw error;
 
-              // 3. Notifier le client
-              const { error: notifError } = await supabase
-                .from('notifications')
-                .insert({
-                  utilisateur_id: commande.id_client,
-                  titre: `${mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1)} #${commande.reference}`,
-                  message: `Votre ${mots.commande} est maintenant "${statutInfo.label}"`,
-                  lue: false,
-                });
-              if (notifError) console.error('Erreur notification:', notifError);
+              // Notifier le client
+              await supabase.from('notifications').insert({
+                utilisateur_id: commande.id_client,
+                titre: `${mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1)} #${commande.reference}`,
+                message: `Votre ${mots.commande} est maintenant "${statutInfo.label}"`,
+                lue: false,
+              });
 
-              Alert.alert('✅ Succès', `Statut mis à jour : ${statutInfo.label}`);
               await loadCommande();
             } catch (error) {
               console.error('Erreur changement statut:', error);
@@ -256,68 +233,60 @@ const raisonsAnnulation = config.raisonsAnnulation || [
     );
   };
 
-  // ============================================================
-  // ANNULATION avec raison (modale)
-  // ============================================================
-  const ouvrirModaleAnnulation = () => {
-  // Si la réservation est confirmée, on affiche un avertissement
-  // avant d'ouvrir la modale de raison (dissuasif).
-  if (commande.statut === 'confirmée') {
-    Alert.alert(
-      '⚠️ Attention',
-      `Cette ${mots.commande} est déjà confirmée. Le client a peut-être préparé son déplacement.\n\nVoulez-vous vraiment annuler ?`,
-      [
-        { text: 'Non, retour', style: 'cancel' },
-        {
-          text: 'Oui, continuer',
-          style: 'destructive',
-          onPress: () => {
-            setRaisonChoisie(null);
-            setRaisonLibre('');
-            setModalVisible(true);
-          },
-        },
-      ]
-    );
-    return;
-  }
 
-  // Sinon (en_attente), pas d'avertissement
-  setRaisonChoisie(null);
-  setRaisonLibre('');
-  setModalVisible(true);
-};
+  const ouvrirModaleAnnulation = () => {
+    if (commande.statut === 'confirmée') {
+      Alert.alert(
+        'Attention',
+        `Cette ${mots.commande} est déjà confirmée. Le client a peut-être préparé son déplacement.\n\nVoulez-vous vraiment annuler ?`,
+        [
+          { text: 'Non, retour', style: 'cancel' },
+          {
+            text: 'Oui, continuer',
+            style: 'destructive',
+            onPress: () => {
+              setRaisonChoisie(null);
+              setRaisonLibre('');
+              setModalVisible(true);
+            },
+          },
+        ]
+      );
+      return;
+    }
+    setRaisonChoisie(null);
+    setRaisonLibre('');
+    setModalVisible(true);
+  };
+
   const fermerModaleAnnulation = () => {
     setModalVisible(false);
     setRaisonChoisie(null);
     setRaisonLibre('');
   };
 
-  // Texte final de la raison
   const raisonFinale =
     raisonChoisie === 'Autre'
       ? raisonLibre.trim()
       : (raisonChoisie || '').trim();
 
   const raisonValide =
-    raisonChoisie === 'Autre' ? raisonLibre.trim().length >= 5 : !!raisonChoisie;
+    raisonChoisie === 'Autre'
+      ? raisonLibre.trim().length >= 5
+      : !!raisonChoisie;
 
   const confirmerAnnulation = async () => {
     if (!raisonValide) return;
-
     fermerModaleAnnulation();
     setUpdating(true);
 
     try {
-      // 1. Remettre le stock si la commande était confirmée (ou expédiée,
-      //    au cas où, mais on n'annule plus à ce stade)
-      if (commande.statut === 'confirmée' || commande.statut === 'expédiée') {
-        const { data: lignes, error: lignesError } = await supabase
+      // Remettre le stock si nécessaire
+      if (commande.statut === 'confirmée') {
+        const { data: lignes } = await supabase
           .from('ligne_commande')
           .select('id_produit, quantite')
           .eq('id_commande', commandeId);
-
-        if (lignesError) throw lignesError;
 
         for (const ligne of lignes || []) {
           await supabase.rpc('incrementer_stock', {
@@ -327,11 +296,9 @@ const raisonsAnnulation = config.raisonsAnnulation || [
         }
       }
 
-      // 2. Récupérer l'utilisateur connecté (pro) pour tracer qui annule
       const { data: userData } = await supabase.auth.getUser();
       const proId = userData?.user?.id || null;
 
-      // 3. Mettre à jour la commande avec statut + raison + traçabilité
       const { error } = await supabase
         .from('commande')
         .update({
@@ -344,16 +311,12 @@ const raisonsAnnulation = config.raisonsAnnulation || [
 
       if (error) throw error;
 
-      // 4. Notifier le client avec la raison
-      const { error: notifError } = await supabase
-        .from('notifications')
-        .insert({
-          utilisateur_id: commande.id_client,
-          titre: `${mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1)} #${commande.reference} annulée`,
-          message: `Votre ${mots.commande} a été annulée. Raison : ${raisonFinale}`,
-          lue: false,
-        });
-      if (notifError) console.error('Erreur notification annulation:', notifError);
+      await supabase.from('notifications').insert({
+        utilisateur_id: commande.id_client,
+        titre: `${mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1)} #${commande.reference} annulée`,
+        message: `Votre ${mots.commande} a été annulée. Raison : ${raisonFinale}`,
+        lue: false,
+      });
 
       Alert.alert(
         `${mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1)} annulée`,
@@ -368,19 +331,8 @@ const raisonsAnnulation = config.raisonsAnnulation || [
     }
   };
 
-  const getStatut = (statut) => STATUTS[statut] || STATUTS.en_attente;
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Date inconnue';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  
+const formatDate = formatDateHeure
 
   if (loading) {
     return (
@@ -400,15 +352,21 @@ const raisonsAnnulation = config.raisonsAnnulation || [
     );
   }
 
-  const statutInfo = getStatut(commande.statut);
+  const statutInfo = STATUTS[commande.statut] || STATUTS.en_attente;
   const lignes = commande.ligne_commande || [];
   const client = commande.utilisateurs || {};
 
-  // UN SEUL bouton : le prochain statut uniquement
-  const prochainStatut = STATUTS[commande.statut]?.suivant || null;
+  // Statut suivant (null pour les catégories à durée)
+  const prochainStatut = besoinDuree
+    ? null
+    : STATUTS[commande.statut]?.suivant || null;
 
-  // Annulation autorisée ?
-  const peutAnnuler = STATUTS_ANNULABLES.includes(commande.statut);
+  // Annulation : seulement si non payée
+  const peutAnnuler =
+    STATUTS_ANNULABLES.includes(commande.statut) && !commande.paye;
+
+  const commandeLabel =
+    mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -431,17 +389,17 @@ const raisonsAnnulation = config.raisonsAnnulation || [
           </View>
         </View>
 
-        {/* Raison d'annulation (si annulée) */}
+        {/* Raison d'annulation */}
         {commande.statut === 'annulée' && commande.raison_annulation && (
           <View style={[styles.card, styles.cardAnnulation]}>
-            <Text style={styles.cardTitle}>❌ Raison de l'annulation</Text>
+            <Text style={styles.cardTitle}>Raison de l'annulation</Text>
             <Text style={styles.raisonText}>{commande.raison_annulation}</Text>
           </View>
         )}
 
-        {/* Carte Client */}
+        {/* Client */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>👤 Client</Text>
+          <Text style={styles.cardTitle}>Client</Text>
           <View style={styles.infoRow}>
             <Ionicons name="person-outline" size={18} color="#6B7280" />
             <Text style={styles.infoText}>{client.nom || 'Nom inconnu'}</Text>
@@ -456,10 +414,10 @@ const raisonsAnnulation = config.raisonsAnnulation || [
           </View>
         </View>
 
-        {/* Carte Produits */}
+        {/* Produits / Chambres */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>
-            📦 {mots.produitPluriel.charAt(0).toUpperCase() + mots.produitPluriel.slice(1)}
+            {mots.produitPluriel.charAt(0).toUpperCase() + mots.produitPluriel.slice(1)}
           </Text>
           {lignes.length === 0 ? (
             <Text style={styles.emptyText}>Aucun {mots.produit}</Text>
@@ -488,11 +446,14 @@ const raisonsAnnulation = config.raisonsAnnulation || [
           </View>
         </View>
 
-        {/* Carte Livraison */}
+        {/* Contact / Livraison */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>
-            📍 {mots.livraison.charAt(0).toUpperCase() + mots.livraison.slice(1)}
+            {besoinAdresse
+              ? mots.livraison.charAt(0).toUpperCase() + mots.livraison.slice(1)
+              : 'Contact'}
           </Text>
+
           {besoinAdresse && (
             <View style={styles.infoRow}>
               <Ionicons name="location-outline" size={18} color="#6B7280" />
@@ -501,48 +462,106 @@ const raisonsAnnulation = config.raisonsAnnulation || [
               </Text>
             </View>
           )}
+
           <View style={styles.infoRow}>
             <Ionicons name="call-outline" size={18} color="#6B7280" />
             <Text style={styles.infoText}>
               {commande.telephone_livraison || 'Non renseigné'}
             </Text>
           </View>
+
           {commande.notes && (
             <View style={styles.infoRow}>
               <Ionicons name="document-text-outline" size={18} color="#6B7280" />
               <Text style={styles.infoText}>{commande.notes}</Text>
             </View>
           )}
-          <View style={styles.infoRow}>
-            <Ionicons name="cash-outline" size={18} color="#6B7280" />
-            <Text style={styles.infoText}>
-              {commande.mode_paiement === 'cash'
-                ? 'Paiement à la livraison'
-                : commande.mode_paiement}
-            </Text>
-          </View>
         </View>
 
-        {/* Carte Dates (catégories avec durée) */}
+        {/* Dates du séjour (uniquement pour les catégories à durée) */}
         {besoinDuree && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>📅 Dates de {mots.livraison}</Text>
+            <Text style={styles.cardTitle}>Dates du {mots.livraison}</Text>
             <View style={styles.infoRow}>
-              <Ionicons name="calendar-outline" size={18} color="#6B7280" />
-              <Text style={styles.infoText}>Début : {formatDate(commande.date_debut)}</Text>
+              <Ionicons name="log-in-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>
+                Début : {formatDate(commande.date_debut)}
+              </Text>
             </View>
             <View style={styles.infoRow}>
-              <Ionicons name="calendar-outline" size={18} color="#6B7280" />
-              <Text style={styles.infoText}>Fin : {formatDate(commande.date_fin)}</Text>
+              <Ionicons name="log-out-outline" size={18} color="#6B7280" />
+              <Text style={styles.infoText}>
+                Fin : {formatDate(commande.date_fin)}
+              </Text>
             </View>
           </View>
         )}
 
-        {/* Carte Date de commande */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>📅 Date de commande</Text>
-          <Text style={styles.dateText}>{formatDate(commande.date_commande)}</Text>
-        </View>
+        {/* Date de la commande (uniquement pour les commandes sans durée) */}
+        {!besoinDuree && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>
+              Date de la {mots.commande}
+            </Text>
+            <Text style={styles.dateText}>
+              {formatDate(commande.date_commande)}
+            </Text>
+          </View>
+        )}
+
+        {/* Paiement (uniquement pour les catégories à durée) */}
+        {besoinDuree && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Paiement</Text>
+
+            {commande.paye ? (
+              <>
+                <View style={styles.infoRow}>
+                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                  <Text style={[styles.infoText, styles.infoTextSuccess]}>
+                    Payée
+                  </Text>
+                </View>
+                {commande.mode_paiement_reel && (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="card-outline" size={18} color="#6B7280" />
+                    <Text style={styles.infoText}>
+                      Méthode : {commande.mode_paiement_reel}
+                    </Text>
+                  </View>
+                )}
+                {commande.date_paiement && (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+                    <Text style={styles.infoText}>
+                      Payée le : {formatDate(commande.date_paiement)}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.infoRow}>
+                  <Ionicons name="information-circle-outline" size={18} color="#F59E0B" />
+                  <Text style={[styles.infoText, styles.infoTextWarning]}>
+                    Annulation impossible une fois payée. Contactez le client pour un remboursement.
+                  </Text>
+                </View>
+              </>
+            ) : commande.statut === 'confirmée' ? (
+              <View style={styles.infoRow}>
+                <Ionicons name="time-outline" size={18} color="#F59E0B" />
+                <Text style={[styles.infoText, styles.infoTextWarning]}>
+                  En attente de paiement du client
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.infoRow}>
+                <Ionicons name="hourglass-outline" size={18} color="#9CA3AF" />
+                <Text style={[styles.infoText, styles.infoTextMuted]}>
+                  Pas encore confirmée
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* ACTIONS */}
         {updating ? (
@@ -552,7 +571,7 @@ const raisonsAnnulation = config.raisonsAnnulation || [
           </View>
         ) : prochainStatut || peutAnnuler ? (
           <View style={styles.actionsContainer}>
-            <Text style={styles.actionsTitle}>🔧 Actions</Text>
+            <Text style={styles.actionsTitle}>Actions</Text>
             <View style={styles.buttonsRow}>
               {prochainStatut && (
                 <TouchableOpacity
@@ -575,7 +594,9 @@ const raisonsAnnulation = config.raisonsAnnulation || [
                   onPress={ouvrirModaleAnnulation}
                 >
                   <Ionicons name="close-circle-outline" size={18} color="#fff" />
-                  <Text style={styles.annulerButtonText}>Annuler la {mots.commande}</Text>
+                  <Text style={styles.annulerButtonText}>
+                    Annuler la {mots.commande}
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -585,7 +606,7 @@ const raisonsAnnulation = config.raisonsAnnulation || [
             <View style={styles.terminalBadge}>
               <Ionicons name="checkmark-circle" size={20} color="#10B981" />
               <Text style={styles.terminalText}>
-                {mots.commande.charAt(0).toUpperCase() + mots.commande.slice(1)} : {statutInfo.label}
+                {commandeLabel} : {statutInfo.label}
               </Text>
             </View>
           </View>
@@ -673,6 +694,9 @@ const raisonsAnnulation = config.raisonsAnnulation || [
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -688,6 +712,7 @@ const styles = StyleSheet.create({
   backButton: { padding: 4 },
   title: { fontSize: 18, fontWeight: 'bold', color: '#111827', marginLeft: 12 },
   content: { padding: 16, paddingBottom: 40 },
+
   referenceContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -704,6 +729,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   statutText: { fontSize: 13, fontWeight: '600' },
+
   card: {
     backgroundColor: '#fff',
     borderRadius: 14,
@@ -711,11 +737,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#F3F4F6',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 1,
   },
   cardAnnulation: { borderColor: '#FEE2E2', backgroundColor: '#FEF2F2' },
   cardTitle: {
@@ -725,8 +746,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   raisonText: { fontSize: 14, color: '#991B1B', fontStyle: 'italic' },
+
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
   infoText: { fontSize: 14, color: '#374151', flex: 1 },
+  infoTextSuccess: { color: '#10B981', fontWeight: '600' },
+  infoTextWarning: { color: '#F59E0B', fontWeight: '600' },
+  infoTextMuted: { color: '#9CA3AF' },
+
   produitItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -750,6 +776,7 @@ const styles = StyleSheet.create({
   },
   totalLabel: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
   totalPrice: { fontSize: 18, fontWeight: 'bold', color: '#2563EB' },
+
   dateText: { fontSize: 14, color: '#374151' },
   emptyText: {
     fontSize: 14,
@@ -758,6 +785,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   errorText: { fontSize: 16, color: '#EF4444', textAlign: 'center' },
+
   actionsContainer: {
     backgroundColor: '#fff',
     borderRadius: 14,

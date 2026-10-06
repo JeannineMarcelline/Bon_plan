@@ -6,16 +6,16 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
   Alert,
   Image,
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
@@ -26,46 +26,11 @@ export default function AddVehiculeScreen({ navigation }) {
   const [type, setType] = useState('');
   const [capacite, setCapacite] = useState('');
   const [prix, setPrix] = useState('');
-  const [villeDepart, setVilleDepart] = useState('');
-  const [villeArrive, setVilleArrive] = useState('');
-  const [dateDepart, setDateDepart] = useState('');
-  const [heureDepart, setHeureDepart] = useState('');
+  
   const [photo, setPhoto] = useState(null);
   const [placesCoteChauffeur, setPlacesCoteChauffeur] = useState('0');
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'JJ/MM/AAAA';
-    const parts = dateString.split('-');
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  };
-
-  const formatTime = (timeString) => {
-    if (!timeString) return 'HH:MM';
-    return timeString;
-  };
-
-  const onDateChange = (event, selectedDate) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      const year = selectedDate.getFullYear();
-      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const day = String(selectedDate.getDate()).padStart(2, '0');
-      setDateDepart(`${year}-${month}-${day}`);
-    }
-  };
-
-  const onTimeChange = (event, selectedTime) => {
-    setShowTimePicker(false);
-    if (selectedTime) {
-      const hours = String(selectedTime.getHours()).padStart(2, '0');
-      const minutes = String(selectedTime.getMinutes()).padStart(2, '0');
-      setHeureDepart(`${hours}:${minutes}`);
-    }
-  };
-
+  
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -108,7 +73,7 @@ const uploadPhoto = async (uri, userId) => {
 };
 
   const handleSubmit = async () => {
-    if (!nom || !type || !capacite || !prix || !villeDepart || !villeArrive || !dateDepart || !heureDepart) {
+    if (!nom || !type || !capacite || !prix) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs');
       return;
     }
@@ -140,10 +105,6 @@ const uploadPhoto = async (uri, userId) => {
       photo: photoUrl,
       capacite: parseInt(capacite),
       prix_place: parseFloat(prix),
-      ville_depart: villeDepart,
-      ville_arrivee: villeArrive,
-      date_depart: dateDepart,
-      heure_depart: heureDepart,
       id_entreprise: entreprise.id,
       places_cote_chauffeur: parseInt(placesCoteChauffeur),
     })
@@ -151,6 +112,8 @@ const uploadPhoto = async (uri, userId) => {
     .single();
 
   if (vehiculeError) throw vehiculeError;
+
+// trajet dans le AddTrajet
 
   const placesACreer = [];
   for (let i = 1; i <= parseInt(capacite); i++) {
@@ -165,8 +128,25 @@ const uploadPhoto = async (uri, userId) => {
   const { error: placesError } = await supabase.from('places').insert(placesACreer);
   if (placesError) throw placesError;
 
-  Alert.alert('Succès', `Véhicule ajouté avec ${capacite} places !`);
-  navigation.goBack();
+    Alert.alert(
+    'Véhicule ajouté',
+    `Véhicule ajouté avec ${capacite} places !\n\nVoulez-vous ajouter un trajet maintenant ?`,
+    [
+      {
+        text: 'Plus tard',
+        style: 'cancel',
+        onPress: () => navigation.goBack(),
+      },
+      {
+        text: 'Ajouter un trajet',
+        onPress: () => {
+          navigation.replace('AddTrajet', {
+            vehiculeId: nouveauVehicule.id_vehicule,
+          });
+        },
+      },
+    ]
+  );
       
     } catch (error) {
       console.error('Erreur ajout de véhicule :', error);
@@ -217,16 +197,6 @@ const uploadPhoto = async (uri, userId) => {
             </View>
           </View>
 
-          <View style={styles.row}>
-            <View style={[styles.inputGroup, styles.halfWidth]}>
-              <Text style={styles.label}>Ville de départ *</Text>
-              <TextInput style={styles.input} placeholder="Antananarivo" value={villeDepart} onChangeText={setVilleDepart} />
-            </View>
-            <View style={[styles.inputGroup, styles.halfWidth]}>
-              <Text style={styles.label}>Ville d'arrivée *</Text>
-              <TextInput style={styles.input} placeholder="Toamasina" value={villeArrive} onChangeText={setVilleArrive} />
-            </View>
-          </View>
 
           {/* ===== NOUVEAU CHAMP ===== */}
           <View style={styles.inputGroup}>
@@ -265,51 +235,10 @@ const uploadPhoto = async (uri, userId) => {
             {photo && <Image source={{ uri: photo }} style={styles.photoPreview} />}
           </View>
 
-          <View style={styles.row}>
-            <View style={[styles.inputGroup, styles.halfWidth]}>
-              <Text style={styles.label}>Date de départ *</Text>
-              <TouchableOpacity style={styles.dropdownInput} onPress={() => setShowDatePicker(true)}>
-                <Text style={[styles.dropdownText, !dateDepart && styles.placeholderText]}>
-                  {formatDate(dateDepart)}
-                </Text>
-                <Ionicons name="calendar-outline" size={20} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            <View style={[styles.inputGroup, styles.halfWidth]}>
-              <Text style={styles.label}>Heure de départ *</Text>
-              <TouchableOpacity style={styles.dropdownInput} onPress={() => setShowTimePicker(true)}>
-                <Text style={[styles.dropdownText, !heureDepart && styles.placeholderText]}>
-                  {formatTime(heureDepart)}
-                </Text>
-                <Ionicons name="time-outline" size={20} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
           <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
             <Text style={styles.submitButtonText}>Enregistrer le véhicule</Text>
           </TouchableOpacity>
         </View>
-
-        {showDatePicker && (
-          <DateTimePicker
-            value={new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={onDateChange}
-            minimumDate={new Date()}
-          />
-        )}
-        {showTimePicker && (
-          <DateTimePicker
-            value={new Date()}
-            mode="time"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={onTimeChange}
-            is24Hour={true}
-          />
-        )}
-
     </ScrollView>
   </KeyboardAvoidingView>
     </SafeAreaView>
@@ -348,20 +277,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#111827',
   },
-  dropdownInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    height: 50,
-  },
-  dropdownText: { fontSize: 16, color: '#111827' },
-  placeholderText: { color: '#9CA3AF' },
+ 
   submitButton: {
     backgroundColor: '#2563EB',
     borderRadius: 12,

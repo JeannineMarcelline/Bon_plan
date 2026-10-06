@@ -165,7 +165,7 @@ export default function ProfileScreen() {
 
               <TouchableOpacity
                 style={[styles.menuItem, styles.menuItemLast]}
-                onPress={() => navigation.navigate('Favoris')}
+                onPress={() => navigation.navigate('Accueil', { screen: 'MesFavoris' })}
                 activeOpacity={0.7}
               >
                 <View

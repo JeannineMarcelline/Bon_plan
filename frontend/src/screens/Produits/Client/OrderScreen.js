@@ -66,21 +66,30 @@ const besoinDuree = config.besoinDuree;
 const besoinAdresse = config.besoinAdresse;
 const mots = config.vocabulaire;
 
-const generateReference = async() => {
+const generateReference = async () => {
+  // On tente d'abord la fonction SQL (jolie référence incrémentale)
+  const { data, error } = await supabase.rpc('generer_reference');
 
-const {data, error} = await supabase.rpc('generer_reference');
+  if (!error && data) {
+    // Vérifier que la référence n'est pas déjà prise
+    const { data: existante } = await supabase
+      .from('commande')
+      .select('id_commande')
+      .eq('reference', data)
+      .maybeSingle();
 
-if(error){
+    if (!existante) {
+      // La référence est libre, on l'utilise
+      return data;
+    }
+    // Sinon, on tombe dans le fallback ci-dessous
+    console.warn('Référence déjà utilisée, fallback sur timestamp');
+  }
 
-  console.error('Erreur de generation de référence:', error);
+  // Fallback : référence basée sur le timestamp (toujours unique)
   const date = new Date();
-
-  const ref = `BPM-${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`;
+  const ref = `BPM-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${Date.now()}`;
   return ref;
-}
-
-return data;
-
 };
 
 const formatPhoneNumber = (text) => {
@@ -333,12 +342,7 @@ const { error: ligneError } = await supabase
 
 if (ligneError) throw ligneError;
 
-// ============================================================
-// NOTIFIER LE PROPRIÉTAIRE DE L'ENTREPRISE
-// ============================================================
-// On envoie une notif au pro pour qu'il voie la nouvelle
-// commande/réservation dans sa cloche 🔔 (pas besoin qu'il
-// ouvre "Mes commandes reçues" pour la découvrir).
+
 try {
   // 1. Récupérer le propriétaire de l'entreprise
   const { data: entrepriseData, error: entError } = await supabase
@@ -645,11 +649,6 @@ return(
                       multiline
                       numberOfLines={2}
                     />
-                  </View>
-        
-                  <View style={styles.paymentInfo}>
-                    <Ionicons name="cash-outline" size={20} color="#2563EB" />
-                    <Text style={styles.paymentText}>Paiement en Cash </Text>
                   </View>
                 </View>
   </ScrollView>

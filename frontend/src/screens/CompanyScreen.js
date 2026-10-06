@@ -27,9 +27,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 
 // ============================================================
 // HELPERS & SOUS-COMPOSANTS MÉMOÏSÉS
-// Isolés du composant principal pour éviter qu'un simple
-// changement d'état (ex: frappe clavier) ne redessine toute
-// la liste des produits/avis et la carte à chaque fois.
 // ============================================================
 
 function renderStars(n, size = 16) {
@@ -47,11 +44,6 @@ function renderStars(n, size = 16) {
   return stars;
 }
 
-// La MapView est le composant natif le plus coûteux de l'écran.
-// Avant : elle recevait un objet `region` recréé à chaque render
-// du parent (donc à chaque frappe dans le champ commentaire),
-// ce qui forçait React Native à la re-render inutilement.
-// Ici, elle est isolée et ne se re-render que si lat/lng changent.
 const CompanyMapPreview = memo(function CompanyMapPreview({
   latitude,
   longitude,
@@ -95,14 +87,17 @@ const CompanyMapPreview = memo(function CompanyMapPreview({
   );
 });
 
-// Une ligne de produit ne se re-render que si SES props changent,
-// pas quand l'utilisateur tape un commentaire ou change de date.
 const ProductRow = memo(function ProductRow({
   produit,
   estComplet,
   motsProduit,
   onOpen,
 }) {
+  const enPromo = estEnPromoActive(produit);
+  const reduction = enPromo
+    ? calcReduction(produit.prix_produit, produit.prix_promo)
+    : 0;
+
   const handlePress = useCallback(() => {
     if (estComplet) {
       Alert.alert(
@@ -138,31 +133,58 @@ const ProductRow = memo(function ProductRow({
       )}
 
       <View style={styles.produitInfo}>
-        <Text
-          style={[styles.produitName, estComplet && { color: '#9CA3AF' }]}
-          numberOfLines={1}
-        >
-          {produit.nom_produit}
-        </Text>
+        <View style={styles.produitNomRow}>
+          <Text
+            style={[styles.produitName, estComplet && { color: '#9CA3AF' }]}
+            numberOfLines={1}
+          >
+            {produit.nom_produit}
+          </Text>
+          {enPromo && !estComplet && (
+            <View style={styles.badgePromo}>
+              <Ionicons name="pricetag" size={9} color="#B45309" />
+              <Text style={styles.badgePromoText}>-{reduction}%</Text>
+            </View>
+          )}
+        </View>
+
         <Text style={styles.produitDetails} numberOfLines={1}>
           {estComplet
-            ? '❌ Complet à ces dates'
+            ? ' Complet à ces dates'
+            : enPromo
+            ? `Jusqu'au ${new Date(produit.date_fin_promo).toLocaleDateString(
+                'fr-FR',
+                { day: '2-digit', month: 'short' }
+              )}`
             : produit.description_pro || `${motsProduit} disponible`}
         </Text>
       </View>
 
       <View style={styles.produitPriceBlock}>
-        <Text style={[styles.produitPrice, estComplet && { color: '#9CA3AF' }]}>
-          {Number(produit.prix_produit).toLocaleString('fr-FR')} Ar
-        </Text>
-        <Text style={styles.produitPriceSub}>par unité</Text>
+        {enPromo && !estComplet ? (
+          <>
+            <Text style={styles.produitPriceOld}>
+              {Number(produit.prix_produit).toLocaleString('fr-FR')} Ar
+            </Text>
+            <Text style={styles.produitPricePromo}>
+              {Number(produit.prix_promo).toLocaleString('fr-FR')} Ar
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text
+              style={[styles.produitPrice, estComplet && { color: '#9CA3AF' }]}
+            >
+              {Number(produit.prix_produit).toLocaleString('fr-FR')} Ar
+            </Text>
+            <Text style={styles.produitPriceSub}>par unité</Text>
+          </>
+        )}
       </View>
     </TouchableOpacity>
   );
 });
 
-// Idem pour les avis : mémoïsés pour ne pas recalculer/re-render
-// toute la liste à chaque changement local du formulaire.
 const AvisItem = memo(function AvisItem({ avis }) {
   return (
     <View style={styles.avisItem}>
@@ -191,13 +213,34 @@ const AvisItem = memo(function AvisItem({ avis }) {
 
 function formatDateFr(date) {
   if (!date) return null;
-
   return date.toLocaleDateString('fr-FR', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   });
 }
+
+function estEnPromoActive(produit) {
+
+if(produit.prix_promo == null) return false;
+if(!produit.date_debut_promo || !produit.date_fin_promo) return false;
+
+const maintenant = new Date();
+const debut = new Date(produit.date_debut_promo);
+const fin  = new Date(produit.date_fin_promo);
+
+return debut <= maintenant && fin >= maintenant;
+
+}
+
+function calcReduction(prixNormal, prixPromo) {
+if(!prixNormal || !prixPromo) return 0;
+
+return Math.round((1 - prixPromo / prixNormal) * 100)
+
+}
+
+
 
 export default function CompanyScreen() {
   const { user } = useAuth();
@@ -216,6 +259,24 @@ export default function CompanyScreen() {
   const [nbAvis, setNbAvis] = useState(0);
   const [produits, setProduits] = useState([]);
   const [loadingProduits, setLoadingProduits] = useState(true);
+  const [estFavori, setEstFavori] = useState(false);
+  const [loadingFavori, setLoadingFavori] = useState(false);
+
+
+  const [trajets, setTrajets] = useState([]);
+  const [vehicules, setVehicules] = useState([]);
+  const [loadingTransport, setLoadingTransport] = useState(false);
+
+  const [modalRechercheVisible, setModalRechercheVisible] = useState(false);
+  const [villesDepart, setVillesDepart] = useState([]);
+  const [villesArrivee, setVillesArrivee] = useState([]); 
+  const [rechercheDepart, setRechercheDepart] = useState(null);
+  const [rechercheArrivee, setRechercheArrivee] = useState(null);
+  const [rechercheDate, setRechercheDate] = useState(null);
+  const [rechercheActive, setRechercheActive] = useState(false);
+  const [resultatsRecherche, setResultatsRecherche] = useState([]);
+  const [loadingRecherche, setLoadingRecherche] = useState(false);
+  const [pickerType, setPickerType] = useState(null); // 'depart' | 'arrivee' | 'date' | null
 
   const [produitSelectionne, setProduitSelectionne] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -225,7 +286,6 @@ export default function CompanyScreen() {
   const [showPickerFin, setShowPickerFin] = useState(false);
   const [rechercheFaite, setRechercheFaite] = useState(false);
 
-
   const { addToCart } = useCart();
 
   const config = useMemo(
@@ -234,29 +294,103 @@ export default function CompanyScreen() {
   );
   const mots = config.vocabulaire;
   const besoinDuree = config.besoinDuree;
+  const estTransport =
+    entreprise?.categorie?.trim().toLowerCase() === 'transport';
 
 
   const loadProduits = useCallback(async (entrepriseId, debut = null, fin = null) => {
     try {
-
       setLoadingProduits(true);
 
-      const {data, error} = await supabase.rpc(
-        'produits_disponibles_pour_dates',{
+      const { data, error } = await supabase.rpc(
+        'produits_disponibles_pour_dates',
+        {
           p_id_entreprise: entrepriseId,
           p_date_debut: debut ? debut.toISOString() : null,
-          p_date_fin : fin ? fin.toISOString() : null,
+          p_date_fin: fin ? fin.toISOString() : null,
         }
       );
 
       if (error) throw error;
-
       setProduits(data || []);
-
     } catch (error) {
       console.error('Erreur chargement produits:', error);
     } finally {
       setLoadingProduits(false);
+    }
+  }, []);
+
+ 
+  const loadTransport = useCallback(async (entrepriseId) => {
+    try {
+      setLoadingTransport(true);
+
+      // 1) Véhicules de l'entreprise
+      const { data: veh, error: errVeh } = await supabase
+        .from('vehicules')
+        .select('*')
+        .eq('id_entreprise', entrepriseId);
+
+      if (errVeh) throw errVeh;
+      setVehicules(veh || []);
+
+      // 2) Trajets liés à ces véhicules
+      if (veh && veh.length > 0) {
+        const idsVehicules = veh.map((v) => v.id_vehicule);
+
+        // Fuseau Madagascar (UTC+3)
+        const madaOffsetMs = 3 * 60 * 60 * 1000;
+        const maintenantMada = new Date(Date.now() + madaOffsetMs);
+        const aujourdhuiMada = maintenantMada.toISOString().split('T')[0];
+
+        const { data: trj, error: errTrj } = await supabase
+          .from('trajets')
+          .select('*, vehicules(nom, prix_place)')
+          .in('id_vehicule', idsVehicules)
+          .gte('date_depart', aujourdhuiMada)
+          .order('date_depart', { ascending: true })
+          .order('heure_depart', { ascending: true });
+
+        if (errTrj) throw errTrj;
+
+        // Filtre strict : enlever les trajets d'aujourd'hui déjà partis
+        const heureMada = maintenantMada.toISOString().split('T')[1].slice(0, 5);
+
+        const trajetsFuturs = (trj || []).filter((t) => {
+          if (t.date_depart > aujourdhuiMada) return true;
+          const heureTrajet = (t.heure_depart || '00:00').slice(0, 5);
+          return heureTrajet >= heureMada;
+        });
+
+        setTrajets(trajetsFuturs);
+
+      const setDepart = new Set();
+        const setArrivee = new Set();
+        trajetsFuturs.forEach((t) => {
+          if (t.ville_depart) setDepart.add(t.ville_depart.trim());
+          if (t.ville_arrivee) setArrivee.add(t.ville_arrivee.trim());
+        });
+        setVillesDepart(Array.from(setDepart).sort());
+        console.log('=== DEBUG TRANSPORT ===');
+        console.log('Total trajets futurs:', trajetsFuturs.length);
+        console.log('Villes départ:', Array.from(setDepart));
+        console.log('Villes arrivée:', Array.from(setArrivee));
+        console.log('Trajets:', trajetsFuturs.map(t => ({
+  id: t.id_trajet,
+  de: t.ville_depart,
+  vers: t.ville_arrivee,
+  date: t.date_depart,
+})));
+        setVillesArrivee(Array.from(setArrivee).sort());
+      } else {
+        setTrajets([]);
+        setVillesDepart([]);
+        setVillesArrivee([]);
+      }
+    } catch (error) {
+      console.error('Erreur chargement transport:', error);
+    } finally {
+      setLoadingTransport(false);
     }
   }, []);
 
@@ -321,7 +455,6 @@ export default function CompanyScreen() {
     }
   }, [user, note, commentaire, entreprise, loadAvis]);
 
-
   const shareWhatsApp = useCallback(() => {
     const message = `🏢 *${entreprise.nom}*\nAdresse : ${entreprise.adresse}\nTéléphone : ${entreprise.telephone}\nNote : ${noteMoyenne.toFixed(1)}/5\n\n`;
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
@@ -331,52 +464,53 @@ export default function CompanyScreen() {
   }, [entreprise, noteMoyenne]);
 
   const openItineraire = useCallback(() => {
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${userLocation?.latitude || ''},${userLocation?.longitude || ''}&destination=${entreprise.latitude || -21.4526},${entreprise.longitude || 47.0855}`;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${
+      userLocation?.latitude || ''
+    },${userLocation?.longitude || ''}&destination=${
+      entreprise.latitude || -21.4526
+    },${entreprise.longitude || 47.0855}`;
     Linking.openURL(url);
   }, [userLocation, entreprise]);
 
   const onChangeDateDebut = useCallback((event, selectedDate) => {
-  if (Platform.OS === 'android') setShowPickerDebut(false);
-  if (event.type === 'dismissed') return;
-  if (selectedDate) {
-    setDateDebut(selectedDate);
+    if (Platform.OS === 'android') setShowPickerDebut(false);
+    if (event.type === 'dismissed') return;
+    if (selectedDate) {
+      setDateDebut(selectedDate);
+      setDateFin((prevFin) => (prevFin && prevFin < selectedDate ? null : prevFin));
+    }
+  }, []);
 
-    setDateFin((prevFin) => (prevFin && prevFin < selectedDate ? null : prevFin));
-  }
- }, []);
+  const onChangeDateFin = useCallback((event, selectedDate) => {
+    if (Platform.OS === 'android') setShowPickerFin(false);
+    if (event.type === 'dismissed') return;
+    if (selectedDate) setDateFin(selectedDate);
+  }, []);
 
- const onChangeDateFin = useCallback((event, selectedDate) => {
-  if(Platform.OS === 'android') setShowPickerFin(false);
-  if(event.type === 'dismissed') return;
-  if(selectedDate) setDateFin(selectedDate);
-}, []);
+  const handleRechercher = useCallback(async () => {
+    if (!dateDebut || !dateFin) {
+      Alert.alert(
+        'Dates manquantes',
+        'Veuillez sélectionner la date de début et la date de fin '
+      );
+      return;
+    }
 
-const handleRechercher = useCallback(async () => {
-  if(!dateDebut || !dateFin) {
-    Alert.alert(
-      'Dates manquantes',
-      'Veuillez sélectionner la date de début et la date de fin '
-    );
-    return;
-  }
+    if (dateFin < dateDebut) {
+      Alert.alert('Date incohérentes', 'La date de fin doit être après la date de début');
+      return;
+    }
 
- if(dateFin < dateDebut) {
-  Alert.alert('Date incohérentes', 'La date de fin doit être après la date de début');
-  return;
- }
+    setRechercheFaite(true);
+    await loadProduits(entreprise.id, dateDebut, dateFin);
+  }, [dateDebut, dateFin, entreprise, loadProduits]);
 
- setRechercheFaite(true);
- await loadProduits(entreprise.id, dateDebut, dateFin);
-
-}, [dateDebut, dateFin, entreprise, loadProduits]);
-
-const effacerRecherche = useCallback(async () => {
-  setDateDebut(null);
-  setDateFin(null);
-  setRechercheFaite(false);
-  await loadProduits(entreprise.id);
-}, [entreprise, loadProduits]);
-
+  const effacerRecherche = useCallback(async () => {
+    setDateDebut(null);
+    setDateFin(null);
+    setRechercheFaite(false);
+    await loadProduits(entreprise.id);
+  }, [entreprise, loadProduits]);
 
   const ouvrirModale = useCallback((produit) => {
     setProduitSelectionne(produit);
@@ -388,31 +522,97 @@ const effacerRecherche = useCallback(async () => {
     setProduitSelectionne(null);
   }, []);
 
-const handleActionProduit = useCallback((produit) => {
-  if (besoinDuree) {
-    fermerModale();
-    navigation.navigate('Order', {
-      produitDirect: {
-        id: produit.id,
-        nom_produit: produit.nom_produit,
-        prix_produit: produit.prix_produit,
-        quantite: 1,
-        photos_produit: produit.photos_produit,
-      },
-      idEntreprise: entreprise.id,
-      // On passe les dates si elles ont été choisies
-      dateDebut: dateDebut ? dateDebut.toISOString() : null,
-      dateFin: dateFin ? dateFin.toISOString() : null,
+  const handleActionProduit = useCallback(
+    (produit) => {
+      if (besoinDuree) {
+        fermerModale();
+        navigation.navigate('Order', {
+          produitDirect: {
+            id: produit.id,
+            nom_produit: produit.nom_produit,
+            prix_produit: produit.prix_produit,
+            quantite: 1,
+            photos_produit: produit.photos_produit,
+          },
+          idEntreprise: entreprise.id,
+          dateDebut: dateDebut ? dateDebut.toISOString() : null,
+          dateFin: dateFin ? dateFin.toISOString() : null,
+        });
+      } else {
+        addToCart(produit);
+        fermerModale();
+        Alert.alert(
+          '🛒 Ajouté',
+          `${produit.nom_produit} a été ajouté à votre ${mots.panier}`
+        );
+      }
+    },
+    [besoinDuree, navigation, entreprise, dateDebut, dateFin, addToCart, mots, fermerModale]
+  );
+
+  // ⭐ MODIF : Handlers recherche transport
+  const ouvrirModaleRecherche = useCallback(() => {
+    setModalRechercheVisible(true);
+  }, []);
+
+  const fermerModaleRecherche = useCallback(() => {
+    setModalRechercheVisible(false);
+    setPickerType(null);
+  }, []);
+
+  const handleRechercheTransport = useCallback(() => {
+    if (!rechercheDepart && !rechercheArrivee && !rechercheDate) {
+      Alert.alert(
+        'Recherche vide',
+        'Veuillez choisir au moins une ville ou une date.'
+      );
+      return;
+    }
+
+    setLoadingRecherche(true);
+
+      const resultats = trajets.filter((t) => {
+      if (rechercheDepart && t.ville_depart?.trim() !== rechercheDepart)
+        return false;
+      if (rechercheArrivee && t.ville_arrivee?.trim() !== rechercheArrivee)
+        return false;
+      if (rechercheDate) {
+        const dateTrajet = new Date(t.date_depart);
+        const memeJour =
+          dateTrajet.getFullYear() === rechercheDate.getFullYear() &&
+          dateTrajet.getMonth() === rechercheDate.getMonth() &&
+          dateTrajet.getDate() === rechercheDate.getDate();
+        if (!memeJour) return false;
+      }
+      return true;
     });
-  } else {
-    addToCart(produit);
-    fermerModale();
-    Alert.alert(
-      '🛒 Ajouté',
-      `${produit.nom_produit} a été ajouté à votre ${mots.panier}`
-    );
-  }
-}, [besoinDuree, navigation, entreprise, dateDebut, dateFin, addToCart, mots, fermerModale]);
+
+    setResultatsRecherche(resultats);
+    setRechercheActive(true);
+    setLoadingRecherche(false);
+    setModalRechercheVisible(false);
+  }, [trajets, rechercheDepart, rechercheArrivee, rechercheDate]);
+
+  const effacerRechercheTransport = useCallback(() => {
+    setRechercheDepart(null);
+    setRechercheArrivee(null);
+    setRechercheDate(null);
+    setResultatsRecherche([]);
+    setRechercheActive(false);
+  }, []);
+
+  // Villes d'arrivée possibles selon la ville de départ choisie
+  const villesArriveeDispo = useMemo(() => {
+    if (!rechercheDepart) return villesArrivee;
+
+    const set = new Set();
+    trajets.forEach((t) => {
+      if (t.ville_depart?.trim() === rechercheDepart && t.ville_arrivee) {
+        set.add(t.ville_arrivee.trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [trajets, rechercheDepart, villesArrivee]);;
 
   // ============================================================
   // CHARGEMENT ENTREPRISE
@@ -434,11 +634,27 @@ const handleActionProduit = useCallback((produit) => {
             ville: data.villes?.nom || '',
             categorie: data.categories?.nom || '',
           };
-          setEntreprise(e);
-          // Avis et produits ne dépendent pas l'un de l'autre :
-          // on les charge en parallèle plutôt qu'en série pour
-          // diviser le temps d'attente par ~2.
-          await Promise.all([loadAvis(e.id), loadProduits(e.id)]);
+                   setEntreprise(e);
+
+          const estTransportCat =
+            e.categorie?.trim().toLowerCase() === 'transport';
+
+          await Promise.all([
+            loadAvis(e.id),
+            loadProduits(e.id),
+            estTransportCat ? loadTransport(e.id) : Promise.resolve(),
+          ]);
+
+          // ⭐ Vérifier si en favori
+          if (user) {
+            const { data: fav } = await supabase
+              .from('favoris')
+              .select('id')
+              .eq('id_utilisateur', user.id)
+              .eq('id_entreprise', e.id)
+              .maybeSingle();
+            setEstFavori(!!fav);
+          }
         }
       } catch (error) {
         console.error('Erreur chargement entreprise:', error);
@@ -447,7 +663,7 @@ const handleActionProduit = useCallback((produit) => {
       }
     };
     loadCompany();
-  }, [id, loadAvis, loadProduits]);
+  }, [id, loadAvis, loadProduits, loadTransport, user]);
 
   useEffect(() => {
     (async () => {
@@ -477,6 +693,68 @@ const handleActionProduit = useCallback((produit) => {
     [rechercheFaite, mots.produit, ouvrirModale]
   );
 
+    // ⭐ ============================================================
+  // FAVORIS
+  // ============================================================
+  const verifierFavori = useCallback(async () => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('favoris')
+        .select('id')
+        .eq('id_utilisateur', user.id)
+        .eq('id_entreprise', id)
+        .maybeSingle();
+
+      if (error) throw error;
+      setEstFavori(!!data);
+    } catch (error) {
+      console.error('Erreur vérif favori:', error);
+    }
+  }, [user, id]);
+
+  const toggleFavori = useCallback(async () => {
+    if (!user) {
+      Alert.alert(
+        'Connexion requise',
+        'Connectez-vous pour ajouter cette entreprise à vos favoris.'
+      );
+      return;
+    }
+
+    setLoadingFavori(true);
+    try {
+      if (estFavori) {
+        // Retirer
+        const { error } = await supabase
+          .from('favoris')
+          .delete()
+          .eq('id_utilisateur', user.id)
+          .eq('id_entreprise', id);
+
+        if (error) throw error;
+        setEstFavori(false);
+      } else {
+        // Ajouter
+        const { error } = await supabase
+          .from('favoris')
+          .insert({
+            id_utilisateur: user.id,
+            id_entreprise: id,
+          });
+
+        if (error) throw error;
+        setEstFavori(true);
+      }
+    } catch (error) {
+      console.error('Erreur toggle favori:', error);
+      Alert.alert('Erreur', 'Impossible de mettre à jour vos favoris.');
+    } finally {
+      setLoadingFavori(false);
+    }
+  }, [user, id, estFavori]);
+
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -500,9 +778,6 @@ const handleActionProduit = useCallback((produit) => {
         keyExtractor={keyExtractorProduit}
         renderItem={renderProduitItem}
         showsVerticalScrollIndicator={false}
-        // ---- Réglages de virtualisation ----
-        // Seuls les produits proches de l'écran sont montés en mémoire ;
-        // le reste est "recyclé" au fil du scroll, comme une vraie liste native.
         removeClippedSubviews={Platform.OS === 'android'}
         initialNumToRender={6}
         maxToRenderPerBatch={6}
@@ -510,13 +785,28 @@ const handleActionProduit = useCallback((produit) => {
         updateCellsBatchingPeriod={50}
         ListHeaderComponent={
           <>
-            <View style={styles.imageContainer}>
+                       <View style={styles.imageContainer}>
               <TouchableOpacity
                 style={styles.backButton}
                 onPress={() => navigation.goBack()}
               >
                 <Ionicons name="arrow-back" size={22} color="#fff" />
               </TouchableOpacity>
+
+              {/* ⭐ Bouton Favori */}
+              <TouchableOpacity
+                style={styles.favoriButton}
+                onPress={toggleFavori}
+                disabled={loadingFavori}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={estFavori ? 'heart' : 'heart-outline'}
+                  size={22}
+                  color={estFavori ? '#EF4444' : '#fff'}
+                />
+              </TouchableOpacity>
+
               <Image
                 source={{
                   uri: entreprise.logo || 'https://via.placeholder.com/400x300',
@@ -535,7 +825,6 @@ const handleActionProduit = useCallback((produit) => {
                 <Text style={styles.ratingText}>({nbAvis} avis)</Text>
               </View>
 
-              {/* Boutons d'action */}
               <View style={styles.actionRow}>
                 <TouchableOpacity
                   style={styles.actionBtn}
@@ -550,15 +839,8 @@ const handleActionProduit = useCallback((produit) => {
                   <Text style={styles.actionBtnText}>Itinéraire</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={shareWhatsApp}
-                >
-                  <Ionicons
-                    name="share-social-outline"
-                    size={20}
-                    color="#10B981"
-                  />
+                <TouchableOpacity style={styles.actionBtn} onPress={shareWhatsApp}>
+                  <Ionicons name="share-social-outline" size={20} color="#10B981" />
                   <Text style={[styles.actionBtnText, { color: '#10B981' }]}>
                     Partager
                   </Text>
@@ -627,9 +909,7 @@ const handleActionProduit = useCallback((produit) => {
                 {entreprise.siteWeb ? (
                   <TouchableOpacity
                     style={[styles.infoRow, { borderBottomWidth: 0 }]}
-                    onPress={() =>
-                      Linking.openURL(`https://${entreprise.siteWeb}`)
-                    }
+                    onPress={() => Linking.openURL(`https://${entreprise.siteWeb}`)}
                   >
                     <Ionicons
                       name="globe-outline"
@@ -652,8 +932,6 @@ const handleActionProduit = useCallback((produit) => {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Localisation</Text>
 
-                {/* Carte mémoïsée : ne se re-render jamais à cause
-                    d'un changement d'état ailleurs sur l'écran */}
                 <CompanyMapPreview
                   latitude={entreprise.latitude}
                   longitude={entreprise.longitude}
@@ -669,131 +947,438 @@ const handleActionProduit = useCallback((produit) => {
               </View>
             </View>
 
-            {/* ----- En-tête de la section produits + sélecteur de dates -----
-                Les lignes de produits elles-mêmes sont gérées par la FlatList
-                (data/renderItem) juste en dessous, pour être virtualisées. */}
-            <View style={styles.section}>
-              <View style={styles.card}>
-                <View style={styles.produitsHeader}>
-                  <Text style={styles.cardTitle}>
-                    {mots.produitPluriel.charAt(0).toUpperCase() +
-                      mots.produitPluriel.slice(1)}
-                  </Text>
-                  <Text style={styles.produitsCount}>
-                    {produits.length} type{produits.length > 1 ? 's' : ''}
-                  </Text>
-                </View>
+           
+            {estTransport && (
+              <>
+                {/* ---------- BOUTON RECHERCHE ---------- */}
+                <View style={styles.section}>
+                  <View style={styles.card}>
+                    <TouchableOpacity
+                      style={styles.btnOpenSearch}
+                      onPress={ouvrirModaleRecherche}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.btnOpenSearchIcon}>
+                        <Ionicons name="search" size={18} color="#2563EB" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.btnOpenSearchTitle}>
+                          {rechercheActive
+                            ? 'Modifier la recherche'
+                            : 'Où allez-vous ?'}
+                        </Text>
+                        <Text style={styles.btnOpenSearchSubtitle}>
+                          {rechercheActive
+                            ? `${rechercheDepart || 'Toutes'} → ${
+                                rechercheArrivee || 'Toutes'
+                              }${
+                                rechercheDate
+                                  ? ` · ${rechercheDate.toLocaleDateString(
+                                      'fr-FR',
+                                      {
+                                        weekday: 'short',
+                                        day: '2-digit',
+                                        month: 'short',
+                                      }
+                                    )}`
+                                  : ''
+                              }`
+                            : 'Trouvez votre trajet en quelques secondes'}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                    </TouchableOpacity>
 
-                {besoinDuree && (
-                  <View style={styles.dateSelectorBox}>
-                    <Text style={styles.dateSelectorTitle}>
-                      Quand voulez-vous venir ?
-                    </Text>
-
-                    <View style={styles.dateSelectorRow}>
-                      <TouchableOpacity
-                        style={styles.dateBtn}
-                        onPress={() => setShowPickerDebut(true)}
-                      >
-                        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-                        <Text
-                          style={[
-                            styles.dateBtnText,
-                            !dateDebut && styles.dateBtnPlaceholder,
-                          ]}
-                          numberOfLines={1}
+                    {rechercheActive && (
+                      <View style={styles.searchActiveBanner}>
+                        <Ionicons name="search" size={14} color="#2563EB" />
+                        <Text style={styles.searchActiveText} numberOfLines={1}>
+                          {rechercheDepart || 'Toutes'} →{' '}
+                          {rechercheArrivee || 'Toutes'}
+                          {rechercheDate
+                            ? ` · ${rechercheDate.toLocaleDateString('fr-FR', {
+                                weekday: 'short',
+                                day: '2-digit',
+                                month: 'short',
+                              })}`
+                            : ''}
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.searchActiveClear}
+                          onPress={effacerRechercheTransport}
                         >
-                          {dateDebut ? formatDateFr(dateDebut) : 'Arrivée'}
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.dateBtn}
-                        onPress={() => {
-                          if (!dateDebut) {
-                            Alert.alert(
-                              "Choisissez d'abord la date d'arrivée",
-                              'Sélectionnez la date de début avant la date de fin.'
-                            );
-                            return;
-                          }
-                          setShowPickerFin(true);
-                        }}
-                      >
-                        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-                        <Text
-                          style={[
-                            styles.dateBtnText,
-                            !dateFin && styles.dateBtnPlaceholder,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {dateFin ? formatDateFr(dateFin) : 'Départ'}
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.searchBtn}
-                        onPress={handleRechercher}
-                      >
-                        <Ionicons name="search" size={18} color="#fff" />
-                      </TouchableOpacity>
-                    </View>
-
-                    {rechercheFaite && (
-                      <TouchableOpacity
-                        style={styles.clearSearchBtn}
-                        onPress={effacerRecherche}
-                      >
-                        <Ionicons name="close-circle-outline" size={14} color="#6B7280" />
-                        <Text style={styles.clearSearchText}>
-                          Effacer les dates et voir tout
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-
-                    {showPickerDebut && (
-                      <DateTimePicker
-                        value={dateDebut || new Date()}
-                        mode="date"
-                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                        minimumDate={new Date()}
-                        onChange={onChangeDateDebut}
-                      />
-                    )}
-
-                    {showPickerFin && (
-                      <DateTimePicker
-                        value={dateFin || dateDebut || new Date()}
-                        mode="date"
-                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                        minimumDate={dateDebut || new Date()}
-                        onChange={onChangeDateFin}
-                      />
+                          <Text style={styles.searchActiveClearText}>Effacer</Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
+                </View>
+
+                {/* ---------- RÉSULTATS ---------- */}
+                {rechercheActive && (
+                  <View style={styles.section}>
+                    <View style={styles.card}>
+                      <View style={styles.produitsHeader}>
+                        <Text style={styles.cardTitle}>Résultats</Text>
+                        <Text style={styles.produitsCount}>
+                          {resultatsRecherche.length} trajet
+                          {resultatsRecherche.length > 1 ? 's' : ''}
+                        </Text>
+                      </View>
+
+                      {loadingRecherche ? (
+                        <ActivityIndicator size="small" color="#2563EB" />
+                      ) : resultatsRecherche.length === 0 ? (
+                        <Text style={styles.emptyText}>
+                          Aucun trajet ne correspond à votre recherche
+                        </Text>
+                      ) : (
+                          resultatsRecherche.map((t) => (
+                          <TouchableOpacity
+                            key={t.id_trajet}
+                            style={styles.itineraireRow}
+                            activeOpacity={0.7}
+                            onPress={() =>
+                              navigation.navigate('Places', {
+                                idVehicule: t.id_vehicule,
+                                idTrajet: t.id_trajet,
+                              })
+                            }
+                          >
+                            <View style={styles.itineraireIcon}>
+                              <Ionicons name="bus-outline" size={20} color="#2563EB" />
+                            </View>
+                            <View style={styles.itineraireInfo}>
+                              <Text style={styles.itineraireRoute} numberOfLines={1}>
+                                {t.ville_depart} → {t.ville_arrivee}
+                              </Text>
+                              <View style={styles.itineraireMeta}>
+                                <Ionicons
+                                  name="calendar-outline"
+                                  size={12}
+                                  color="#6B7280"
+                                />
+                                <Text style={styles.itineraireMetaText}>
+                                  {t.date_depart
+                                    ? `Départ : ${new Date(
+                                        t.date_depart
+                                      ).toLocaleDateString('fr-FR', {
+                                        weekday: 'short',
+                                        day: '2-digit',
+                                        month: 'short',
+                                      })} à ${(t.heure_depart || '00:00').slice(0, 5)}`
+                                    : 'Départ : —'}
+                                  {t.vehicules?.nom ? ` · ${t.vehicules.nom}` : ''}
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={styles.itinerairePriceBlock}>
+                              <Text style={styles.itinerairePrice}>
+                                {t.vehicules?.prix_place
+                                  ? Number(t.vehicules.prix_place).toLocaleString(
+                                      'fr-FR'
+                                    )
+                                  : '—'}{' '}
+                                Ar
+                              </Text>
+                              <Text style={styles.itinerairePriceSub}>par place</Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))
+                      )}
+                    </View>
+                  </View>
                 )}
+
+                {/* ---------- ITINÉRAIRES POPULAIRES ---------- */}
+                {!rechercheActive && (
+                  <View style={styles.section}>
+                    <View style={styles.card}>
+                      <View style={styles.produitsHeader}>
+                        <Text style={styles.cardTitle}>Itinéraires populaires</Text>
+                        <Text style={styles.produitsCount}>
+                          {trajets.length} trajet{trajets.length > 1 ? 's' : ''}
+                        </Text>
+                      </View>
+
+                      {loadingTransport ? (
+                        <ActivityIndicator size="small" color="#2563EB" />
+                      ) : trajets.length === 0 ? (
+                        <Text style={styles.emptyText}>
+                          Aucun départ programmé pour le moment
+                        </Text>
+                      ) : (
+                          trajets.slice(0, 3).map((t) => (
+                          <TouchableOpacity
+                            key={t.id_trajet}
+                            style={styles.itineraireRow}
+                            activeOpacity={0.7}
+                            onPress={() =>
+                              navigation.navigate('Places', {
+                                idVehicule: t.id_vehicule,
+                                idTrajet: t.id_trajet,
+                              })
+                            }
+                          >
+                            <View style={styles.itineraireIcon}>
+                              <Ionicons name="bus-outline" size={20} color="#2563EB" />
+                            </View>
+                            <View style={styles.itineraireInfo}>
+                              <Text style={styles.itineraireRoute} numberOfLines={1}>
+                               {t.ville_depart?.trim()} → {t.ville_arrivee?.trim()}
+                              </Text>
+                              <View style={styles.itineraireMeta}>
+                                <Ionicons
+                                  name="calendar-outline"
+                                  size={12}
+                                  color="#6B7280"
+                                />
+                                <Text style={styles.itineraireMetaText}>
+                                  {t.date_depart
+                                    ? `Départ : ${new Date(
+                                        t.date_depart
+                                      ).toLocaleDateString('fr-FR', {
+                                        weekday: 'short',
+                                        day: '2-digit',
+                                        month: 'short',
+                                      })} à ${(t.heure_depart || '00:00').slice(0, 5)}`
+                                    : 'Départ : —'}
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={styles.itinerairePriceBlock}>
+  <Text style={styles.itinerairePrice}>
+    {t.vehicules?.prix_place
+      ? Number(t.vehicules.prix_place).toLocaleString('fr-FR')
+      : '—'}{' '}
+    Ar
+  </Text>
+  <View style={styles.itinerairePriceSubRow}>
+    <Text style={styles.itinerairePriceSub}>par place</Text>
+    <Ionicons name="chevron-forward" size={14} color="#9CA3AF" />
+  </View>
+</View>
+                          </TouchableOpacity>
+                        ))
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                {/* ---------- NOTRE FLOTTE ---------- */}
+                {!rechercheActive && (
+                  <View style={styles.section}>
+                    <View style={styles.card}>
+                      <View style={styles.produitsHeader}>
+                        <Text style={styles.cardTitle}>Notre flotte</Text>
+                        <Text style={styles.produitsCount}>
+                          {vehicules.length} véhicule{vehicules.length > 1 ? 's' : ''}
+                        </Text>
+                      </View>
+
+                      {loadingTransport ? (
+                        <ActivityIndicator size="small" color="#2563EB" />
+                      ) : vehicules.length === 0 ? (
+                        <Text style={styles.emptyText}>Aucun véhicule disponible</Text>
+                      ) : (
+                        vehicules.slice(0, 2).map((v) => (
+                          <View key={v.id_vehicule} style={styles.vehiculeRow}>
+                            {v.photo ? (
+                              <Image
+                                source={{ uri: v.photo }}
+                                style={styles.vehiculeThumb}
+                              />
+                            ) : (
+                              <View
+                                style={[
+                                  styles.vehiculeThumb,
+                                  styles.vehiculeThumbPlaceholder,
+                                ]}
+                              >
+                                <Ionicons name="bus-outline" size={24} color="#9CA3AF" />
+                              </View>
+                            )}
+                            <View style={styles.vehiculeInfo}>
+                              <Text style={styles.vehiculeNom} numberOfLines={1}>
+                                {v.nom}
+                              </Text>
+                              <View style={styles.vehiculeMeta}>
+                                {v.type ? (
+                                  <Text style={styles.vehiculeMetaText}>{v.type}</Text>
+                                ) : null}
+                                {v.capacite ? (
+                                  <View style={styles.vehiculeMetaItem}>
+                                    <Ionicons
+                                      name="people-outline"
+                                      size={12}
+                                      color="#6B7280"
+                                    />
+                                    <Text style={styles.vehiculeMetaText}>
+                                      {v.capacite} places
+                                    </Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                            </View>
+                          </View>
+                        ))
+                      )}
+
+                      <TouchableOpacity
+                        style={styles.vehiculeButton}
+                        onPress={() =>
+                          navigation.navigate('CompanyVehicules', {
+                            idEntreprise: entreprise.id,
+                          })
+                        }
+                      >
+                        <Ionicons name="bus-outline" size={20} color="#fff" />
+                        <Text style={styles.vehiculeButtonText}>
+                          Voir tous les véhicules
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ----- Section produits (non transport) ----- */}
+            {!estTransport && (
+              <View style={styles.section}>
+                <View style={styles.card}>
+                  <View style={styles.produitsHeader}>
+                    <Text style={styles.cardTitle}>
+                      {mots.produitPluriel.charAt(0).toUpperCase() +
+                        mots.produitPluriel.slice(1)}
+                    </Text>
+                    <Text style={styles.produitsCount}>
+                      {produits.length} type{produits.length > 1 ? 's' : ''}
+                    </Text>
+                  </View>
+
+                  {besoinDuree && (
+                    <View style={styles.dateSelectorBox}>
+                      <Text style={styles.dateSelectorTitle}>
+                        Quand voulez-vous venir ?
+                      </Text>
+
+                      <View style={styles.dateSelectorRow}>
+                        <TouchableOpacity
+                          style={styles.dateBtn}
+                          onPress={() => setShowPickerDebut(true)}
+                        >
+                          <Ionicons
+                            name="calendar-outline"
+                            size={16}
+                            color="#6B7280"
+                          />
+                          <Text
+                            style={[
+                              styles.dateBtnText,
+                              !dateDebut && styles.dateBtnPlaceholder,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {dateDebut ? formatDateFr(dateDebut) : 'Arrivée'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.dateBtn}
+                          onPress={() => {
+                            if (!dateDebut) {
+                              Alert.alert(
+                                "Choisissez d'abord la date d'arrivée",
+                                'Sélectionnez la date de début avant la date de fin.'
+                              );
+                              return;
+                            }
+                            setShowPickerFin(true);
+                          }}
+                        >
+                          <Ionicons
+                            name="calendar-outline"
+                            size={16}
+                            color="#6B7280"
+                          />
+                          <Text
+                            style={[
+                              styles.dateBtnText,
+                              !dateFin && styles.dateBtnPlaceholder,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {dateFin ? formatDateFr(dateFin) : 'Départ'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.searchBtn}
+                          onPress={handleRechercher}
+                        >
+                          <Ionicons name="search" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+
+                      {rechercheFaite && (
+                        <TouchableOpacity
+                          style={styles.clearSearchBtn}
+                          onPress={effacerRecherche}
+                        >
+                          <Ionicons
+                            name="close-circle-outline"
+                            size={14}
+                            color="#6B7280"
+                          />
+                          <Text style={styles.clearSearchText}>
+                            Effacer les dates et voir tout
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {showPickerDebut && (
+                        <DateTimePicker
+                          value={dateDebut || new Date()}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                          minimumDate={new Date()}
+                          onChange={onChangeDateDebut}
+                        />
+                      )}
+
+                      {showPickerFin && (
+                        <DateTimePicker
+                          value={dateFin || dateDebut || new Date()}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                          minimumDate={dateDebut || new Date()}
+                          onChange={onChangeDateFin}
+                        />
+                      )}
+                    </View>
+                  )}
+                </View>
               </View>
-            </View>
+            )}
           </>
         }
         ListEmptyComponent={
-          <View style={styles.produitsStatusBox}>
-            {loadingProduits ? (
-              <ActivityIndicator size="small" color="#1E3A5F" />
-            ) : (
-              <Text style={styles.emptyText}>
-                Aucun{mots.produit === 'produit' ? '' : 'e'} {mots.produit}{' '}
-                disponible
-              </Text>
-            )}
-          </View>
+          estTransport ? null : (
+            <View style={styles.produitsStatusBox}>
+              {loadingProduits ? (
+                <ActivityIndicator size="small" color="#1E3A5F" />
+              ) : (
+                <Text style={styles.emptyText}>
+                  Aucun{mots.produit === 'produit' ? '' : 'e'} {mots.produit}{' '}
+                  disponible
+                </Text>
+              )}
+            </View>
+          )
         }
         ListFooterComponent={
           <>
-            {/* ============================================================
-                AVIS (discrets en bas)
-                ============================================================ */}
             <View style={styles.section}>
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Avis des clients ({nbAvis})</Text>
@@ -842,30 +1427,12 @@ const handleActionProduit = useCallback((produit) => {
               </View>
             </View>
 
-            {entreprise.categorie?.toLowerCase() === 'transport' && (
-              <View style={styles.section}>
-                <TouchableOpacity
-                  style={styles.vehiculeButton}
-                  onPress={() =>
-                    navigation.navigate('CompanyVehicules', {
-                      idEntreprise: entreprise.id,
-                    })
-                  }
-                >
-                  <Ionicons name="bus-outline" size={22} color="#fff" />
-                  <Text style={styles.vehiculeButtonText}>Voir les véhicules</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
             <View style={{ height: 30 }} />
           </>
         }
       />
 
-      {/* ============================================================
-          MODALE DE DÉTAIL PRODUIT
-          ============================================================ */}
+      
       <Modal
         visible={modalVisible}
         transparent
@@ -876,10 +1443,7 @@ const handleActionProduit = useCallback((produit) => {
           <View style={styles.modalContent}>
             {produitSelectionne && (
               <>
-                <TouchableOpacity
-                  style={styles.modalClose}
-                  onPress={fermerModale}
-                >
+                <TouchableOpacity style={styles.modalClose} onPress={fermerModale}>
                   <Ionicons name="close" size={20} color="#fff" />
                 </TouchableOpacity>
 
@@ -890,9 +1454,7 @@ const handleActionProduit = useCallback((produit) => {
                     style={styles.modalImage}
                   />
                 ) : (
-                  <View
-                    style={[styles.modalImage, styles.produitThumbPlaceholder]}
-                  >
+                  <View style={[styles.modalImage, styles.produitThumbPlaceholder]}>
                     <Ionicons name="image-outline" size={40} color="#9CA3AF" />
                   </View>
                 )}
@@ -902,9 +1464,7 @@ const handleActionProduit = useCallback((produit) => {
                     {produitSelectionne.nom_produit}
                   </Text>
                   <Text style={styles.modalPrice}>
-                    {Number(produitSelectionne.prix_produit).toLocaleString(
-                      'fr-FR'
-                    )}{' '}
+                    {Number(produitSelectionne.prix_produit).toLocaleString('fr-FR')}{' '}
                     Ar
                   </Text>
 
@@ -915,11 +1475,7 @@ const handleActionProduit = useCallback((produit) => {
                   </Text>
 
                   <View style={styles.modalStock}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={16}
-                      color="#10B981"
-                    />
+                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
                     <Text style={styles.modalStockText}>
                       {produitSelectionne.stock} disponible
                       {produitSelectionne.stock > 1 ? 's' : ''}
@@ -941,6 +1497,186 @@ const handleActionProduit = useCallback((produit) => {
             )}
           </View>
         </View>
+      </Modal>
+
+      {/* ⭐ MODIF : MODALE RECHERCHE TRAJET */}
+      <Modal
+        visible={modalRechercheVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={fermerModaleRecherche}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalSheetHeader}>
+              <Text style={styles.modalSheetTitle}>Rechercher un trajet</Text>
+              <TouchableOpacity
+                style={styles.modalSheetClose}
+                onPress={fermerModaleRecherche}
+              >
+                <Ionicons name="close" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.fieldLabel}>Ville de départ</Text>
+            <TouchableOpacity
+              style={[styles.fieldBox, rechercheDepart && styles.fieldBoxFilled]}
+              onPress={() => setPickerType('depart')}
+            >
+              <Ionicons name="location-outline" size={16} color="#6B7280" />
+              <Text
+                style={[styles.fieldText, rechercheDepart && styles.fieldTextFilled]}
+              >
+                {rechercheDepart || "D'où partez-vous ?"}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <Text style={styles.fieldLabel}>Ville d'arrivée</Text>
+            <TouchableOpacity
+              style={[styles.fieldBox, rechercheArrivee && styles.fieldBoxFilled]}
+              onPress={() => setPickerType('arrivee')}
+            >
+              <Ionicons name="flag-outline" size={16} color="#6B7280" />
+              <Text
+                style={[styles.fieldText, rechercheArrivee && styles.fieldTextFilled]}
+              >
+                {rechercheArrivee || 'Où allez-vous ?'}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <Text style={styles.fieldLabel}>Date de départ</Text>
+            <TouchableOpacity
+              style={[styles.fieldBox, rechercheDate && styles.fieldBoxFilled]}
+              onPress={() => setPickerType('date')}
+            >
+              <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+              <Text
+                style={[styles.fieldText, rechercheDate && styles.fieldTextFilled]}
+              >
+                {rechercheDate
+                  ? rechercheDate.toLocaleDateString('fr-FR', {
+                      weekday: 'short',
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                    })
+                  : 'Toutes les dates'}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.btnSearch}
+              onPress={handleRechercheTransport}
+            >
+              <Ionicons name="search" size={18} color="#fff" />
+              <Text style={styles.btnSearchText}>Rechercher</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ⭐ MODIF : DateTimePicker pour la recherche date */}
+      {pickerType === 'date' && (
+        <DateTimePicker
+          value={rechercheDate || new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          minimumDate={new Date()}
+          onChange={(event, selectedDate) => {
+            if (Platform.OS === 'android') setPickerType(null);
+            if (event.type === 'dismissed') return;
+            if (selectedDate) setRechercheDate(selectedDate);
+          }}
+        />
+      )}
+
+      {/* ⭐ MODIF : MODALE CHOIX VILLE */}
+      <Modal
+        visible={pickerType === 'depart' || pickerType === 'arrivee'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerType(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setPickerType(null)}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.modalSheetHeader}>
+              <Text style={styles.modalSheetTitle}>
+                {pickerType === 'depart'
+                  ? 'Choisir la ville de départ'
+                  : "Choisir la ville d'arrivée"}
+              </Text>
+              <TouchableOpacity
+                style={styles.modalSheetClose}
+                onPress={() => setPickerType(null)}
+              >
+                <Ionicons name="close" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 320 }}>
+                            {(pickerType === 'depart' ? villesDepart : villesArriveeDispo).map(
+                (v) => {
+                  const selected =
+                    pickerType === 'depart'
+                      ? rechercheDepart === v
+                      : rechercheArrivee === v;
+                  return (
+                    <TouchableOpacity
+                      key={v}
+                      style={styles.villeItem}
+                      onPress={() => {
+                        if (pickerType === 'depart') {
+                          setRechercheDepart(v);
+                          // Si l'arrivée actuelle n'est plus accessible depuis ce départ → on l'efface
+                          const arriveesPossibles = new Set(
+                            trajets
+                              .filter((t) => t.ville_depart?.trim() === v)
+                              .map((t) => t.ville_arrivee?.trim())
+                          );
+                          if (
+                            rechercheArrivee &&
+                            !arriveesPossibles.has(rechercheArrivee)
+                          ) {
+                            setRechercheArrivee(null);
+                          }
+                        } else {
+                          setRechercheArrivee(v);
+                        }
+                        setPickerType(null);
+                      }}
+                    >
+                      <Ionicons
+                        name={selected ? 'radio-button-on' : 'radio-button-off'}
+                        size={18}
+                        color={selected ? '#2563EB' : '#9CA3AF'}
+                      />
+                      <Text
+                        style={[
+                          styles.villeItemText,
+                          selected && { color: '#2563EB', fontWeight: '700' },
+                        ]}
+                      >
+                        {v}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }
+              )}
+
+             {(pickerType === 'depart' ? villesDepart : villesArriveeDispo)
+                .length === 0 && (
+                <Text style={styles.emptyText}>Aucune ville disponible</Text>
+              )}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -973,6 +1709,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+
+  favoriButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }, 
 
   // ---------- EN-TÊTE ----------
   headerSection: {
@@ -1189,7 +1939,7 @@ const styles = StyleSheet.create({
   },
   vehiculeButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
 
-  // ---------- MODALE ----------
+  // ---------- MODALE PRODUIT ----------
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -1314,68 +2064,350 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     lineHeight: 18,
   },
+
   // ---------- SÉLECTEUR DE DATES ----------
-dateSelectorBox: {
-  backgroundColor: '#F9FAFB',
-  borderRadius: 12,
-  padding: 12,
-  marginBottom: 14,
-  borderWidth: 1,
-  borderColor: '#E5E7EB',
-},
-dateSelectorTitle: {
-  fontSize: 13,
-  fontWeight: '600',
-  color: '#374151',
-  marginBottom: 8,
-},
-dateSelectorRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 6,
-},
-dateBtn: {
-  flex: 1,
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 6,
-  backgroundColor: '#fff',
-  borderWidth: 1,
-  borderColor: '#D1D5DB',
-  borderRadius: 10,
-  paddingHorizontal: 10,
-  paddingVertical: 10,
-},
-dateBtnText: {
-  fontSize: 13,
-  color: '#111827',
-  flex: 1,
-},
-dateBtnPlaceholder: {
-  color: '#9CA3AF',
-},
-searchBtn: {
-  width: 42,
-  height: 42,
-  borderRadius: 10,
-  backgroundColor: '#2563EB',
-  justifyContent: 'center',
-  alignItems: 'center',
-},
-clearSearchBtn: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 4,
-  alignSelf: 'center',
-  marginTop: 10,
-  paddingVertical: 4,
-},
-clearSearchText: {
-  fontSize: 12,
-  color: '#6B7280',
-  textDecorationLine: 'underline',
-},
-produitRowComplet: {
-  opacity: 0.6,
-},
+  dateSelectorBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  dateSelectorTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  dateSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dateBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  dateBtnText: {
+    fontSize: 13,
+    color: '#111827',
+    flex: 1,
+  },
+  dateBtnPlaceholder: {
+    color: '#9CA3AF',
+  },
+  searchBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#2563EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearSearchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'center',
+    marginTop: 10,
+    paddingVertical: 4,
+  },
+  clearSearchText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textDecorationLine: 'underline',
+  },
+  produitRowComplet: {
+    opacity: 0.6,
+  },
+   // ⭐ PROMO côté client
+  produitNomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  badgePromo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  badgePromoText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  produitPriceOld: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+    textAlign: 'right',
+  },
+  produitPricePromo: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+
+  // ⭐ MODIF : ---------- TRANSPORT : ITINÉRAIRES ----------
+  itineraireRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    gap: 12,
+  },
+  itineraireIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itineraireInfo: { flex: 1 },
+  itineraireRoute: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 3,
+  },
+  itineraireMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  itineraireMetaText: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  itinerairePriceBlock: { alignItems: 'flex-end' },
+  itinerairePrice: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E3A5F',
+  },
+  itinerairePriceSub: {
+    fontSize: 10,
+    color: '#9CA3AF',
+   
+  },
+
+  // ⭐ MODIF : ---------- TRANSPORT : FLOTTE ----------
+  vehiculeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    gap: 12,
+  },
+  vehiculeThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+  },
+  vehiculeThumbPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  vehiculeInfo: { flex: 1 },
+  vehiculeNom: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 3,
+  },
+  vehiculeMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  vehiculeMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  vehiculeMetaText: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+
+  btnOpenSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  btnOpenSearchIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  btnOpenSearchTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  btnOpenSearchSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+
+  // ⭐ MODIF : ---------- BANDEAU RECHERCHE ACTIVE ----------
+  searchActiveBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 12,
+  },
+  searchActiveText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#1E3A5F',
+  },
+  searchActiveClear: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  searchActiveClearText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+
+  // ⭐ MODIF : ---------- MODALE RECHERCHE ----------
+  modalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+    maxHeight: '90%',
+  },
+  modalSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalSheetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  modalSheetClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // ⭐ MODIF : ---------- CHAMPS ----------
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    marginTop: 14,
+  },
+  fieldBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  fieldBoxFilled: {
+    backgroundColor: '#fff',
+    borderColor: '#D1D5DB',
+  },
+  fieldText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#9CA3AF',
+  },
+  fieldTextFilled: {
+    color: '#111827',
+    fontWeight: '500',
+  },
+
+  // ⭐ MODIF : ---------- BOUTON RECHERCHER ----------
+  btnSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 15,
+    marginTop: 24,
+  },
+  btnSearchText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+
+  villeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  villeItemText: {
+    fontSize: 15,
+    color: '#111827',
+  },
+    itinerairePriceSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
 });

@@ -63,14 +63,17 @@ export default function MesReservationScreen({ navigation }) {
           statut,
           prix_total,
           paye,
-          vehicules (
-            nom,
-            photo,
+          trajets (
             ville_depart,
             ville_arrivee,
             date_depart,
             heure_depart,
-            entreprises ( nom )
+            vehicules (
+              nom,
+              photo,
+              id_entreprise,
+              entreprises ( nom )
+            )
           ),
           reservation_places (
             id_place,
@@ -87,24 +90,25 @@ export default function MesReservationScreen({ navigation }) {
           .map((rp) => rp.places?.numero_place)
           .filter(Boolean);
         return {
-          // Identifiant unique commun
           id_unique: `transport-${r.id_reservation}`,
           id_reservation: r.id_reservation,
-          type: 'transport',           // sert au filtre
+          type: 'transport',          
           categorie: 'Transport',
           date_ref: r.date_reservation,
           statut: r.statut,
           prix_total: r.prix_total,
           paye: r.paye,
+          id_entreprise: r.trajets?.vehicules?.id_entreprise,
 
           // Infos d'affichage transport
-          vehicule_nom: r.vehicules?.nom,
-          vehicule_photo: r.vehicules?.photo,
-          entreprise_nom: r.vehicules?.entreprises?.nom,
-          ville_depart: r.vehicules?.ville_depart,
-          ville_arrivee: r.vehicules?.ville_arrivee,
-          date_depart: r.vehicules?.date_depart,
-          heure_depart: r.vehicules?.heure_depart,
+          vehicule_nom: r.trajets?.vehicules?.nom,
+          vehicule_photo: r.trajets?.vehicules?.photo,
+          entreprise_nom: r.trajets?.vehicules?.entreprises?.nom,
+
+          ville_depart: r.trajets?.ville_depart,
+          ville_arrivee: r.trajets?.ville_arrivee,
+          date_depart: r.trajets?.date_depart,
+          heure_depart: r.trajets?.heure_depart,
           places: numeros.join(', '),
           nb_places: numeros.length,
         };
@@ -240,37 +244,7 @@ export default function MesReservationScreen({ navigation }) {
     );
   };
 
-  // ============================================================
-  // PAIEMENT TRANSPORT (inchangé)
-  // ============================================================
-  const handlePayerTransport = async (idReservation) => {
-    if (!isOnline) {
-      Alert.alert(
-        'Connexion requise',
-        'Le paiement nécessite une connexion internet.'
-      );
-      return;
-    }
 
-    try {
-      const { error } = await supabase
-        .from('reservation_transport')
-        .update({ paye: true })
-        .eq('id_reservation', idReservation);
-
-      if (error) throw error;
-
-      Alert.alert('Paiement effectué', 'Votre paiement a bien été enregistré.');
-      loadReservation();
-    } catch (error) {
-      console.error('Erreur paiement:', error);
-      Alert.alert('Erreur', "Impossible d'enregistrer le paiement");
-    }
-  };
-
-  // ============================================================
-  // HELPERS STATUT
-  // ============================================================
   const getStatutConfig = (statut) => {
     // On gère les deux systèmes de statuts (avec ou sans accent)
     const s = statut?.toLowerCase();
@@ -384,21 +358,39 @@ export default function MesReservationScreen({ navigation }) {
           <Text style={styles.priceValue}>{item.prix_total} Ar</Text>
         </View>
 
+       {/* ⭐ Ouvre PaymentScreen au lieu de payer direct */}
         {item.statut === 'confirmee' && !item.paye && (
           <TouchableOpacity
             style={[styles.payerButton, !isOnline && styles.payerButtonDisabled]}
-            onPress={() => handlePayerTransport(item.id_reservation)}
+            onPress={() => {
+              if (!isOnline) {
+                Alert.alert(
+                  'Connexion requise',
+                  'Le paiement nécessite une connexion internet.'
+                );
+                return;
+              }
+              navigation.navigate('Payment', {
+                type: 'reservation',
+                reservation: {
+                  id_reservation: item.id_reservation,
+                  reference: `RES-${item.id_reservation}`,
+                  prix_total: item.prix_total,
+                  id_entreprise: item.id_entreprise,
+                },
+              });
+            }}
             activeOpacity={0.85}
+            disabled={!isOnline}
           >
-            <Ionicons name="card-outline" size={16} color="#fff" />
+             <Ionicons name="shield-checkmark" size={14} color="#fff" />
             <Text style={styles.payerButtonText}>
               {isOnline ? 'Payer' : 'Hors-ligne'}
             </Text>
           </TouchableOpacity>
         )}
-
-        {item.statut === 'confirmee' && item.paye && (
-          <TouchableOpacity
+           {item.statut === 'confirmee' && item.paye && (
+                   <TouchableOpacity
             style={styles.payeBadge}
             onPress={() =>
               navigation.navigate('TicketScreen', {
@@ -407,24 +399,28 @@ export default function MesReservationScreen({ navigation }) {
             }
             activeOpacity={0.85}
           >
-            <Ionicons name="ticket-outline" size={16} color="#16A34A" />
+            <Ionicons name="ticket-outline" size={14} color="#065F46" />
             <Text style={styles.payeBadgeText}>Billet</Text>
-            <Ionicons name="chevron-forward" size={14} color="#16A34A" />
-          </TouchableOpacity>
+            <Ionicons name="chevron-forward" size={12} color="#065F46" />
+          </TouchableOpacity> 
         )}
 
-        {item.statut !== 'annulee' && item.statut !== 'terminee' && (
-          <TouchableOpacity
-            style={styles.annulerButton}
-            onPress={() => annulerReservationTransport(item.id_reservation)}
-          >
-            <Text style={styles.annulerButtonText}>Annuler</Text>
-          </TouchableOpacity>
-        )}
+           {/* ⭐ On cache Annuler si payé ou annulée */}
+        {item.statut !== 'annulee' &&
+          item.statut !== 'annulée' &&
+          item.statut !== 'terminee' &&
+          !item.paye && (
+                        <TouchableOpacity
+              style={styles.annulerButton}
+              onPress={() => annulerReservationTransport(item.id_reservation)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
+              <Text style={styles.annulerButtonText}>Annuler</Text>
+            </TouchableOpacity>
+          )} 
       </View>
 
-      {/* Petite flèche en bas à droite, uniquement si la carte est cliquable
-          (payée et non annulée) — cohérent avec les cartes hôtel. */}
       {estCliquable && (
         <View style={styles.chevronIndicator}>
           <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
@@ -528,7 +524,7 @@ export default function MesReservationScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Mes réservations</Text>
+        <Text style={styles.title}>Mes Réservations</Text>
       </View>
 
       {/* Barre de filtres (cachée s'il n'y a qu'une seule catégorie) */}
@@ -773,38 +769,63 @@ const styles = StyleSheet.create({
   payerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#1E3A5F',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
+    gap: 5,
+    backgroundColor: '#2563EB',        // ⭐ Bleu moderne
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  payerButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  payerButtonDisabled: { backgroundColor: '#9CA3AF' },
+  payerButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  payerButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    shadowOpacity: 0,
+  },
 
   payeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  payeBadgeText: { color: '#16A34A', fontWeight: '700', fontSize: 14 },
-  annulerButton: {
-    backgroundColor: '#FEE2E2',
-    paddingVertical: 6,
+    gap: 5,
+    backgroundColor: '#ECFDF5',           // ⭐ Fond vert clair doux
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
     paddingHorizontal: 12,
-    borderRadius: 6,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  payeBadgeText: {
+    color: '#065F46',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+   annulerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     marginTop: 8,
     alignSelf: 'flex-start',
   },
   annulerButtonText: {
     color: '#DC2626',
-    fontWeight: 'bold',
-    fontSize: 13,
+    fontWeight: '700',
+    fontSize: 12,
   },
+  
   chevronIndicator: {
   position: 'absolute',
   bottom: 12,

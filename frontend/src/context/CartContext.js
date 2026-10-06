@@ -90,21 +90,18 @@ export const CartProvider = ({ children }) => {
   // 2. AJOUTER UN PRODUIT AU PANIER
   // ═════════════════════════════════════════════════════════
 
- const addToCart = async (produit, quantite = 1) => {
+const addToCart = async (produit, quantite = 1) => {
   if (!user) {
     Alert.alert('Connexion requise', 'Connectez-vous pour ajouter au panier');
     return;
   }
 
-  // Vérifier si le produit est de la même entreprise que le panier actuel
-  if (idEntreprise && idEntreprise !== produit.id_entreprise && cart.length > 0) {
+  // ✅ AJOUT : Vérifier que le produit a bien un id_entreprise
+  if (!produit.id_entreprise) {
+    console.error('❌ Produit sans id_entreprise:', produit);
     Alert.alert(
-      '⚠️ Attention',
-      `Vous avez déjà des produits d'une autre entreprise dans votre panier. Voulez-vous vider le panier et ajouter ce produit ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Vider et ajouter', onPress: () => clearCartAndAdd(produit, quantite) }
-      ]
+      'Erreur',
+      'Ce produit n\'est pas rattaché à une entreprise. Contactez le support.'
     );
     return;
   }
@@ -279,52 +276,55 @@ export const CartProvider = ({ children }) => {
     }
   };
 
-  
+const clearCart = async () => {
+  if (!user || !idPanier) {
+    setCart([]);
+    setIdEntreprise(null);
+    setIdPanier(null);
+    return;
+  }
 
-  const clearCart = async () => {
-    if (!user || !idPanier) {
-      setCart([]);
-      setIdEntreprise(null);
-      setIdPanier(null);
-      return;
-    }
+  setLoading(true);
+  try {
+    // 1. Supprimer les lignes du panier
+    const { error: deleteLignesError } = await supabase
+      .from('ligne_panier')
+      .delete()
+      .eq('id_panier', idPanier);
 
-    setLoading(true);
-    try {
-      // Supprimer toutes les lignes du panier
-      const { error: deleteError } = await supabase
-        .from('ligne_panier')
-        .delete()
-        .eq('id_panier', idPanier);
+    if (deleteLignesError) throw deleteLignesError;
 
-      if (deleteError) throw deleteError;
+    // 2. Supprimer le panier lui-même.
+    // Sans ça, il reste en base avec un id_entreprise fantôme,
+    // et le client voit le mauvais vocabulaire la prochaine fois
+    // qu'il ouvre son panier.
+    const { error: deletePanierError } = await supabase
+      .from('panier')
+      .delete()
+      .eq('id_panier', idPanier);
 
-      // Le panier reste mais vide
-      setCart([]);
-      setIdEntreprise(null);
-      setIdPanier(null);
+    if (deletePanierError) throw deletePanierError;
 
-    } catch (error) {
-      console.error('Erreur vidage panier:', error);
-      Alert.alert('Erreur', 'Impossible de vider le panier');
-    } finally {
-      setLoading(false);
-    }
-  };
+    setCart([]);
+    setIdEntreprise(null);
+    setIdPanier(null);
+  } catch (error) {
+    console.error('Erreur vidage panier:', error);
+    Alert.alert('Erreur', 'Impossible de vider le panier');
+  } finally {
+    setLoading(false);
+  }
+};
+ 
 
-  // ═════════════════════════════════════════════════════════
-  // 6. VIDER LE PANIER ET AJOUTER (changement entreprise)
-  // ═════════════════════════════════════════════════════════
+
 
   const clearCartAndAdd = async (produit, quantite) => {
     await clearCart();
     await addToCart(produit, quantite);
   };
 
-  // ═════════════════════════════════════════════════════════
-  // 7. CALCULS
-  // ═════════════════════════════════════════════════════════
-
+ 
   const getTotal = () => {
     return cart.reduce((sum, item) => sum + item.prix_produit * item.quantite, 0);
   };
@@ -333,9 +333,6 @@ export const CartProvider = ({ children }) => {
     return cart.reduce((sum, item) => sum + item.quantite, 0);
   };
 
-  // ═════════════════════════════════════════════════════════
-  // 8. CHARGEMENT INITIAL (quand user change ou au montage)
-  // ═════════════════════════════════════════════════════════
 
   useEffect(() => {
     if (user) {
@@ -347,9 +344,7 @@ export const CartProvider = ({ children }) => {
     }
   }, [user]);
 
-  // ═════════════════════════════════════════════════════════
-  // 9. VALUE DU CONTEXT
-  // ═════════════════════════════════════════════════════════
+  
 
   const value = {
     cart,

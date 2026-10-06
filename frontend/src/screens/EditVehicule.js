@@ -36,6 +36,7 @@ export default function EditVehicleScreen({ route, navigation }) {
   const [placesCoteChauffeur, setPlacesCoteChauffeur] = useState('0');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [idTrajet, setIdTrajet] = useState(null);
 
   useEffect(() => {
     const loadVehicle = async () => {
@@ -60,6 +61,22 @@ export default function EditVehicleScreen({ route, navigation }) {
          setPhoto(v.photo);
          setPlacesCoteChauffeur(String(v.places_cote_chauffeur || 0));
        }
+
+       const {data: trajetData, error:trajetError} = await supabase
+       .from('trajets')
+       .select('*')
+       .eq('id_vehicule', id)
+       .maybeSingle();
+
+     if(trajetError) throw trajetError;
+
+     if(trajetData){
+ setIdTrajet(trajetData.id_trajet);
+ setVilleDepart(trajetData.ville_depart);
+ setVilleArrivee(trajetData.ville_arrivee);
+ setDateDepart(trajetData.date_depart);
+ setHeureDepart(trajetData.heure_depart);
+     }
       } catch (error) {
         console.error('Erreur chargement véhicule:', error);
         Alert.alert('Erreur', 'Impossible de charger le véhicule');
@@ -130,17 +147,39 @@ export default function EditVehicleScreen({ route, navigation }) {
       photo: photoUrl,
       capacite: parseInt(capacite),
       prix_place: parseFloat(prix),
-      ville_depart: villeDepart,
-      ville_arrivee: villeArrivee,
-      date_depart: dateDepart,
-      heure_depart: heureDepart,
       places_cote_chauffeur: parseInt(placesCoteChauffeur),
     })
     .eq('id_vehicule', id);
 
   if (error) throw error;
+  
+  if(idTrajet) {
+    const {error: trajetError} = await supabase
+    .from('trajets')
+    .update({
+      ville_depart: villeDepart,
+      ville_arrivee: villeArrivee,
+      date_depart: dateDepart,
+      heure_depart: heureDepart,
+    })
+    .eq('id_trajet', idTrajet);
 
-  Alert.alert('✅ Succès', 'Véhicule modifié !');
+  if (trajetError) throw trajetError
+
+  }else{
+  const {error: trajetError} = await supabase
+  .from('trajets')
+  .insert({
+   id_vehicule: id,
+   ville_depart: villeDepart,
+   ville_arrivee: villeArrivee,
+   date_depart: dateDepart,
+   heure_depart: heureDepart,
+  });
+  if(trajetError) throw trajetError;
+  }
+
+  Alert.alert(' Succès', 'Véhicule modifié !');
   navigation.goBack();
 } catch (error) {
   console.error('Erreur modification:', error);

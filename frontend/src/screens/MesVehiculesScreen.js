@@ -7,9 +7,9 @@ import {
   Alert,
   Image,
   ActivityIndicator,
-  StyleSheet
+  StyleSheet,
 } from 'react-native';
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,43 +23,51 @@ export default function MesVehiculesScreen({ navigation }) {
   const loadVehicules = async () => {
     try {
       const { data: entreprise, error: entrepriseError } = await supabase
-      .from('entreprises')
-      .select('id')
-      .eq('utilisateur_id', user.id)
-      .maybeSingle();
+        .from('entreprises')
+        .select('id')
+        .eq('utilisateur_id', user.id)
+        .maybeSingle();
 
       if (entrepriseError) throw entrepriseError;
 
-      if(!entreprise) {
+      if (!entreprise) {
         setVehicules([]);
         setLoading(false);
         return;
       }
 
-      const {data, error} = await supabase
-      .from('vehicules')
-      .select('*, places (id_place)')
-      .eq('id_entreprise', entreprise.id)
-      .order('id_vehicule', {ascending: false});
+      const { data, error } = await supabase
+        .from('vehicules')
+        .select('*, places (id_place), trajets (*)')
+        .eq('id_entreprise', entreprise.id)
+        .order('id_vehicule', { ascending: false });
 
-      if(error) throw error;
+      if (error) throw error;
 
       const vehiculesAvecStats = await Promise.all(
-        (data || []).map(async(v) => {
-          const {count} = await supabase
-          .from('reservation_transport')
-          .select('*', {count: 'exact', head: true})
-          .eq('id_vehicule', v.id_vehicule);
+        (data || []).map(async (v) => {
+          const trajetsIds = (v.trajets || []).map((t) => t.id_trajet);
 
-          return{
+          let nbReservations = 0;
+          if (trajetsIds.length > 0) {
+            const { count } = await supabase
+              .from('reservation_transport')
+              .select('*', { count: 'exact', head: true })
+              .in('id_trajet', trajetsIds);
+
+            nbReservations = count || 0;
+          }
+
+          return {
             ...v,
             nb_places: (v.places || []).length,
-            nb_reservations: count || 0,
+            nb_reservations: nbReservations,
+            trajets: v.trajets || [],
           };
         })
       );
-   setVehicules(vehiculesAvecStats);
 
+      setVehicules(vehiculesAvecStats);
     } catch (error) {
       console.error('Erreur de chargement de véhicule', error);
       Alert.alert('Erreur', 'Impossible de charger les véhicules');
@@ -74,62 +82,153 @@ export default function MesVehiculesScreen({ navigation }) {
     }, [])
   );
 
-const deleteVehicule = async (id, nom) => {
-  // Verifier si le véhicule a des réservations actives avant de proposer la suppression
-  try{
-    const { count, error: countError } = await supabase
-      .from('reservation_transport')
-      .select('*', { count: 'exact', head: true })
-      .eq('id_vehicule', id)
-      .in('statut', ['en_attente', 'confirmee']);
+  const deleteVehicule = async (id, nom) => {
+    try {
+      const { data: trajetsVehicule, error: trajetsError } = await supabase
+        .from('trajets')
+        .select('id_trajet')
+        .eq('id_vehicule', id);
 
-    if (countError) throw countError;
+      if (trajetsError) throw trajetsError;
 
-    const nbReservations = count || 0;
+      const trajetsIds = (trajetsVehicule || []).map((t) => t.id_trajet);
 
-    if(nbReservations > 0) {
-      Alert.alert('Suppression impossible', `Ce vehicule à ${nbReservations} reservations en cours. Vous ne pouvez pas supprimer`, [{text: "OK"}]);
-      return;
-    }
-    Alert.alert('Confirmation', `Voulez-vous vraiment supprimer "${nom}" ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const { error: placesError } = await supabase
-              .from('places')
-              .delete()
-              .eq('id_vehicule', id);
-            if (placesError) throw placesError;
+      let nbReservations = 0;
+      if (trajetsIds.length > 0) {
+        const { count, error: countError } = await supabase
+          .from('reservation_transport')
+          .select('*', { count: 'exact', head: true })
+          .in('id_trajet', trajetsIds)
+          .in('statut', ['en_attente', 'confirmee']);
 
-            const { error: vehiculeError } = await supabase
-              .from('vehicules')
-              .delete()
-              .eq('id_vehicule', id);
-            if (vehiculeError) throw vehiculeError;
+        if (countError) throw countError;
+        nbReservations = count || 0;
+      }
 
-            Alert.alert('Succès', 'Véhicule supprimé');
-            loadVehicules();
-          } catch (error) {
-            console.error('Erreur de suppression', error);
-            Alert.alert('Erreur', 'Impossible de supprimer');
-          }
+      if (nbReservations > 0) {
+        Alert.alert(
+          'Suppression impossible',
+          `Ce véhicule a ${nbReservations} réservation(s) en cours. Vous ne pouvez pas le supprimer.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      Alert.alert('Confirmation', `Voulez-vous vraiment supprimer "${nom}" ?`, [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error: placesError } = await supabase
+                .from('places')
+                .delete()
+                .eq('id_vehicule', id);
+              if (placesError) throw placesError;
+
+              const { error: trajetsDelError } = await supabase
+                .from('trajets')
+                .delete()
+                .eq('id_vehicule', id);
+              if (trajetsDelError) throw trajetsDelError;
+
+              const { error: vehiculeError } = await supabase
+                .from('vehicules')
+                .delete()
+                .eq('id_vehicule', id);
+              if (vehiculeError) throw vehiculeError;
+
+              Alert.alert('Succès', 'Véhicule supprimé');
+              loadVehicules();
+            } catch (error) {
+              console.error('Erreur de suppression', error);
+              Alert.alert('Erreur', 'Impossible de supprimer');
+            }
+          },
         },
-      },
-    ]);
-  }catch(error){
-    console.error('Erreur vérification réservations:', error);
-    Alert.alert('Erreur', 'Impossible de vérifier les réservations');
-  }
-};
+      ]);
+    } catch (error) {
+      console.error('Erreur vérification réservations:', error);
+      Alert.alert('Erreur', 'Impossible de vérifier les réservations');
+    }
+  };
 
+  // NOUVEAU : gère la suppression/désactivation d'UN SEUL trajet (pas tout le véhicule)
+  const handleTrajetAction = async (trajet) => {
+    try {
+      // On vérifie si CE trajet précis a déjà des réservations
+      const { count, error: countError } = await supabase
+        .from('reservation_transport')
+        .select('*', { count: 'exact', head: true })
+        .eq('id_trajet', trajet.id_trajet);
 
-  // MODIFIE: Nouveau design de carte avec labels
+      if (countError) throw countError;
+
+      const aDesReservations = (count || 0) > 0;
+
+      if (aDesReservations) {
+        // NOUVEAU : trajet déjà réservé au moins une fois -> jamais de vraie
+        // suppression, on le désactive seulement (statut = 'annule')
+        Alert.alert(
+          'Annuler ce trajet ?',
+          'Ce trajet a déjà des réservations, il ne peut pas être supprimé. Vous pouvez seulement l\'annuler (il restera visible dans l\'historique).',
+          [
+            { text: 'Retour', style: 'cancel' },
+            {
+              text: 'Annuler le trajet',
+              style: 'destructive',
+              onPress: async () => {
+                const { error } = await supabase
+                  .from('trajets')
+                  .update({ statut: 'annule' })
+                  .eq('id_trajet', trajet.id_trajet);
+                if (error) {
+                  console.error('Erreur annulation trajet:', error);
+                  Alert.alert('Erreur', 'Impossible d\'annuler le trajet');
+                  return;
+                }
+                Alert.alert('Succès', 'Trajet annulé');
+                loadVehicules();
+              },
+            },
+          ]
+        );
+      } else {
+        // NOUVEAU : aucune réservation -> suppression réelle possible
+        Alert.alert(
+          'Supprimer ce trajet ?',
+          `${trajet.ville_depart} → ${trajet.ville_arrivee}, aucune réservation en cours.`,
+          [
+            { text: 'Annuler', style: 'cancel' },
+            {
+              text: 'Supprimer',
+              style: 'destructive',
+              onPress: async () => {
+                const { error } = await supabase
+                  .from('trajets')
+                  .delete()
+                  .eq('id_trajet', trajet.id_trajet);
+                if (error) {
+                  console.error('Erreur suppression trajet:', error);
+                  Alert.alert('Erreur', 'Impossible de supprimer le trajet');
+                  return;
+                }
+                Alert.alert('Succès', 'Trajet supprimé');
+                loadVehicules();
+              },
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Erreur vérification trajet:', error);
+      Alert.alert('Erreur', 'Impossible de vérifier ce trajet');
+    }
+  };
+
   const renderVehicule = ({ item }) => (
     <View style={styles.card}>
-      {/* Image + Titre */}
       <View style={styles.cardHeader}>
         <View style={styles.imageContainer}>
           {item.photo ? (
@@ -148,44 +247,90 @@ const deleteVehicule = async (id, nom) => {
         </View>
       </View>
 
-      {/* Grille d'informations */}
       <View style={styles.infoGrid}>
-        {/* Ligne 1: Trajet */}
-        <View style={styles.infoRow}>
-          <Ionicons name="map-outline" size={16} color="#6B7280" />
-          <Text style={styles.infoLabel}>Trajet : </Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.ville_depart} → {item.ville_arrivee}</Text>
-        </View>
-
-        {/* Ligne 2: Date + Heure */}
-        <View style={styles.infoRow}>
-          <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-          <Text style={styles.infoLabel}>Date de départ :</Text>
-          <Text style={styles.infoValue}>{item.date_depart}</Text>
-          <Ionicons name="time-outline" size={16} color="#6B7280" style={styles.infoIconSpacing} />
-          <Text style={styles.infoLabel}>Heure :</Text>
-          <Text style={styles.infoValue}>{item.heure_depart}</Text>
-        </View>
-
-        {/* Ligne 3: Prix + Places */}
         <View style={styles.infoRow}>
           <Ionicons name="cash-outline" size={16} color="#6B7280" />
           <Text style={styles.infoLabel}>Prix/place :</Text>
           <Text style={styles.infoValue}>{item.prix_place || item.prix} Ar</Text>
-          <Ionicons name="people-outline" size={16} color="#6B7280" style={styles.infoIconSpacing} />
+          <Ionicons
+            name="people-outline"
+            size={16}
+            color="#6B7280"
+            style={styles.infoIconSpacing}
+          />
           <Text style={styles.infoLabel}>Places :</Text>
           <Text style={styles.infoValue}>{item.capacite || 0}</Text>
         </View>
-
-        
       </View>
 
+      <View style={styles.trajetsSection}>
+        <View style={styles.trajetsHeader}>
+          <Text style={styles.trajetsTitle}>Trajets ({item.trajets.length})</Text>
+        </View>
 
-      {/* Actions */}
+        {item.trajets.length === 0 ? (
+          <Text style={styles.noTrajetText}>Aucun trajet pour ce véhicule</Text>
+        ) : (
+          item.trajets.map((trajet) => (
+            // MODIFIÉ : trajetItem devient cliquable (bouton supprimer en plus),
+            // et son style change légèrement si le trajet est annulé
+            <View
+              key={trajet.id_trajet}
+              style={[
+                styles.trajetItem,
+                trajet.statut === 'annule' && styles.trajetItemAnnule,
+              ]}
+            >
+              <View style={styles.trajetInfo}>
+                <View style={styles.trajetLine}>
+                  <Ionicons name="map-outline" size={14} color="#2563EB" />
+                  <Text style={styles.trajetText}>
+                    {trajet.ville_depart} → {trajet.ville_arrivee}
+                  </Text>
+                  {/* NOUVEAU : badge visuel si le trajet est annulé */}
+                  {trajet.statut === 'annule' && (
+                    <View style={styles.trajetBadgeAnnule}>
+                      <Text style={styles.trajetBadgeAnnuleText}>Annulé</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.trajetLine}>
+                  <Ionicons name="calendar-outline" size={14} color="#6B7280" />
+                  <Text style={styles.trajetSubText}>
+                    {trajet.date_depart} à {trajet.heure_depart}
+                  </Text>
+                </View>
+              </View>
+              {/* NOUVEAU : bouton pour supprimer/annuler ce trajet précis */}
+              {trajet.statut !== 'annule' && (
+                <TouchableOpacity
+                  style={styles.trajetDeleteButton}
+                  onPress={() => handleTrajetAction(trajet)}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                </TouchableOpacity>
+              )}
+            </View>
+          ))
+        )}
+
+        <TouchableOpacity
+          style={styles.addTrajetButton}
+          onPress={() =>
+            navigation.navigate('AddTrajet', { vehiculeId: item.id_vehicule })
+          }
+        >
+          <Ionicons name="add-circle-outline" size={16} color="#2563EB" />
+          <Text style={styles.addTrajetButtonText}>Ajouter un trajet</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.cardActions}>
         <TouchableOpacity
           style={[styles.actionButton, styles.editButton]}
-          onPress={() => navigation.navigate('EditVehicule', { id: item.id_vehicule })}
+          onPress={() =>
+            navigation.navigate('EditVehicule', { id: item.id_vehicule })
+          }
         >
           <Ionicons name="pencil-outline" size={16} color="#2563EB" />
           <Text style={styles.actionText}>Modifier</Text>
@@ -246,10 +391,7 @@ const deleteVehicule = async (id, nom) => {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
   center: {
     flex: 1,
     justifyContent: 'center',
@@ -266,17 +408,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  list: {
-    padding: 16,
-    paddingBottom: 40,
-  },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#111827' },
+  list: { padding: 16, paddingBottom: 40 },
 
-  // CARD
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -291,7 +425,6 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
 
-  // HEADER CARD
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -300,27 +433,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  imageContainer: {
-    marginRight: 12,
-  },
-  image: {
-    width: 60,
-    height: 60,
-    borderRadius: 10,
-  },
+  imageContainer: { marginRight: 12 },
+  image: { width: 60, height: 60, borderRadius: 10 },
   imagePlaceholder: {
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerInfo: {
-    flex: 1,
-  },
-  nom: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
+  headerInfo: { flex: 1 },
+  nom: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
   typeBadge: {
     backgroundColor: '#EFF6FF',
     paddingHorizontal: 10,
@@ -329,16 +450,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginTop: 2,
   },
-  typeText: {
-    fontSize: 11,
-    color: '#2563EB',
-    fontWeight: '500',
-  },
+  typeText: { fontSize: 11, color: '#2563EB', fontWeight: '500' },
 
-  // INFOS
-  infoGrid: {
-    marginBottom: 12,
-  },
+  infoGrid: { marginBottom: 12 },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -352,16 +466,76 @@ const styles = StyleSheet.create({
     marginRight: 6,
     fontWeight: '500',
   },
-  infoValue: {
-    fontSize: 13,
-    color: '#111827',
-    fontWeight: '500',
-  },
-  infoIconSpacing: {
-    marginLeft: 12,
-  },
+  infoValue: { fontSize: 13, color: '#111827', fontWeight: '500' },
+  infoIconSpacing: { marginLeft: 12 },
 
-  // ACTIONS
+  trajetsSection: {
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  trajetsHeader: { marginBottom: 8 },
+  trajetsTitle: { fontSize: 13, fontWeight: '600', color: '#111827' },
+  noTrajetText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    marginBottom: 8,
+  },
+  // MODIFIÉ : trajetItem passe en flexDirection row pour accueillir le bouton supprimer
+  trajetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 6,
+  },
+  // NOUVEAU : style grisé pour un trajet annulé
+  trajetItemAnnule: {
+    opacity: 0.5,
+  },
+  // NOUVEAU : conteneur des infos du trajet (pour laisser la place au bouton à droite)
+  trajetInfo: {
+    flex: 1,
+  },
+  trajetLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  trajetText: { fontSize: 13, fontWeight: '600', color: '#111827' },
+  trajetSubText: { fontSize: 12, color: '#6B7280' },
+  // NOUVEAU : badge "Annulé"
+  trajetBadgeAnnule: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 1,
+    borderRadius: 10,
+    marginLeft: 6,
+  },
+  trajetBadgeAnnuleText: { fontSize: 10, color: '#DC2626', fontWeight: '700' },
+  // NOUVEAU : bouton supprimer un trajet précis
+  trajetDeleteButton: {
+    padding: 8,
+  },
+  addTrajetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    marginTop: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+  },
+  addTrajetButtonText: { fontSize: 13, color: '#2563EB', fontWeight: '500' },
+
   cardActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -378,33 +552,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 6,
   },
-  editButton: {
-    backgroundColor: '#EFF6FF',
-  },
-  deleteButton: {
-    backgroundColor: '#FEF2F2',
-  },
-  actionText: {
-    fontSize: 12,
-    color: '#2563EB',
-    fontWeight: '500',
-  },
-  actionTextDelete: {
-    color: '#EF4444',
-  },
+  editButton: { backgroundColor: '#EFF6FF' },
+  deleteButton: { backgroundColor: '#FEF2F2' },
+  actionText: { fontSize: 12, color: '#2563EB', fontWeight: '500' },
+  actionTextDelete: { color: '#EF4444' },
 
-  // EMPTY
-  empty: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 12,
-  },
+  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  emptyText: { fontSize: 16, color: '#6B7280', marginTop: 12 },
   addButton: {
     backgroundColor: '#2563EB',
     paddingHorizontal: 20,
@@ -412,8 +566,5 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 16,
   },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
+  addButtonText: { color: '#FFFFFF', fontWeight: 'bold' },
 });

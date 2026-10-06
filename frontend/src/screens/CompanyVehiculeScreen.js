@@ -17,40 +17,44 @@ import { useFocusEffect } from '@react-navigation/native';
 
 export default function CompanyVehiculeScreen({ route, navigation }) {
   const { idEntreprise } = route.params;
-  const [vehicules, setVehicules] = useState([]);
+  const [trajets, setTrajets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
 useFocusEffect(
   React.useCallback(() => {
-    const loadVehicules = async () => {
+    const loadTrajets = async () => {
       try {
        const {data, error} = await supabase
-       .from('vehicules')
-       .select('*, places (statut)') 
-       .eq('id_entreprise', idEntreprise);
+       .from('trajets')
+       .select('*, vehicules!inner(*, places (statut))')
+       .eq('vehicules.id_entreprise', idEntreprise)
+       // NOUVEAU : on ne montre au client que les trajets actifs (pas annulés)
+       .eq('statut', 'actif')
+       // NOUVEAU : et dont la date de départ n'est pas déjà passée
+       .gte('date_depart', new Date().toISOString().split('T')[0]);
 
        if(error) throw error; 
        
-       const vehiculeAvecPlace = (data || []).map((v) => {
-       const placeDisponible = (v.places || []).filter(
+       const trajetsAvecPlace = (data || []).map((item) => {
+       const placeDisponible = (item.vehicules?.places || []).filter(
           (p) => p.statut === 'disponible'
         ).length;
         return{
-          ...v,
+          ...item,
           places_disponibles: placeDisponible
         }
 
        })
-        setVehicules(vehiculeAvecPlace);
+        setTrajets(trajetsAvecPlace);
       } catch (error) {
-        console.error("Erreur chargement véhicules", error);
+        console.error("Erreur chargement trajets", error);
       } finally {
         setLoading(false);
       }
     };
-    loadVehicules();
+    loadTrajets();
   }, [idEntreprise])
 );
 
@@ -67,33 +71,35 @@ useFocusEffect(
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
   };
 
-  const renderVehicule = ({ item }) => (
+  const renderTrajet = ({ item }) => (
     <TouchableOpacity
      style={styles.card}
      onPress={() => {
     if (item.places_disponibles === 0) {
-      Alert.alert('Complet', 'Ce véhicule n\'a plus de places disponibles');
+      Alert.alert('Complet', 'Ce trajet n\'a plus de places disponibles');
       return;
     }
-    navigation.navigate('Places', { idVehicule: item.id_vehicule });
+    navigation.navigate('Places', {
+      idVehicule: item.vehicules.id_vehicule,
+      idTrajet: item.id_trajet,
+    });
   }}
   activeOpacity={item.places_disponibles === 0 ? 1 : 0.8}
     >
-      {/* Photo du véhicule avec zoom */}
       <TouchableOpacity
         activeOpacity={0.8}
-        onPress={() => openImageModal(item.photo)}
+        onPress={() => openImageModal(item.vehicules.photo)}
       >
         <View style={styles.imageContainer}>
-          {item.photo ? (
-            <Image source={{ uri: item.photo }} style={styles.image} />
+          {item.vehicules.photo ? (
+            <Image source={{ uri: item.vehicules.photo }} style={styles.image} />
           ) : (
             <View style={[styles.image, styles.imagePlaceholder]}>
               <Ionicons name="car-outline" size={40} color="#aaa" />
               <Text style={styles.imagePlaceholderText}>Aucune photo</Text>
             </View>
           )}
-          {item.photo && (
+          {item.vehicules.photo && (
             <View style={styles.zoomIcon}>
               <Ionicons name="expand-outline" size={16} color="#fff" />
             </View>
@@ -101,10 +107,9 @@ useFocusEffect(
         </View>
       </TouchableOpacity>
 
-      {/* Infos */}
       <View style={styles.infoContainer}>
-        <Text style={styles.vehiculeNom}>{item.nom}</Text>
-        <Text style={styles.vehiculeType}>{item.type || "Véhicule"}</Text>
+        <Text style={styles.vehiculeNom}>{item.vehicules.nom}</Text>
+        <Text style={styles.vehiculeType}>{item.vehicules.type || "Véhicule"}</Text>
 
         <View style={styles.infoRow}>
           <Ionicons name="calendar-outline" size={16} color="#6C757D" />
@@ -122,7 +127,7 @@ useFocusEffect(
 
         <View style={styles.infoRow}>
           <Ionicons name="cash-outline" size={16} color="#6C757D" />
-          <Text style={styles.vehiculePrice}>{item.prix_place} Ar / place</Text>
+          <Text style={styles.vehiculePrice}>{item.vehicules.prix_place} Ar / place</Text>
         </View>
 
         {item.places_disponibles > 0 ? (
@@ -160,22 +165,21 @@ useFocusEffect(
         <Text style={styles.title}>🚐 Véhicules disponibles</Text>
       </View>
 
-      {vehicules.length === 0 ? (
+      {trajets.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="car-outline" size={60} color="#ccc" />
-          <Text style={styles.emptyText}>Aucun véhicule disponible</Text>
+          <Text style={styles.emptyText}>Aucun trajet disponible</Text>
         </View>
       ) : (
         <FlatList
-          data={vehicules}
-          keyExtractor={(item) => item.id_vehicule.toString()}
-          renderItem={renderVehicule}
+          data={trajets}
+          keyExtractor={(item) => item.id_trajet.toString()}
+          renderItem={renderTrajet}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
         />
       )}
 
-      {/* ===== MODAL POUR AGRANDIR LA PHOTO ===== */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -308,9 +312,6 @@ const styles = StyleSheet.create({
     color: "#1E3A5F",
     marginLeft: 6,
   },
-  badgeContainer: {
-    marginTop: 6,
-  },
   badge: {
     flexDirection: "row",
     alignItems: "center",
@@ -340,7 +341,6 @@ const styles = StyleSheet.create({
     color: "#6C757D",
     marginTop: 12,
   },
-  // ===== STYLES DU MODAL =====
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.92)",

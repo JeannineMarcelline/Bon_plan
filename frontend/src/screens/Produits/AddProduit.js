@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { getConfigCategorie } from '../../Config/categorieConfig';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const Max_photo = 1;
 
@@ -37,9 +38,16 @@ const [photos_produit, setPhotos_produit] = useState([]);
 const [upLoading, setUpLoading] = useState(false);
 const [chargementInitial, setChargementInitial] = useState(true);
 
-
 const [mots, setMots] = useState(getConfigCategorie(null).vocabulaire);
 const [entrepriseId, setEntrepriseId] = useState(null);
+
+const [enPromo, setEnPromo] = useState(false);
+const [prixPromo, setPrixPromo] = useState('');
+const [dateDebutPromo, setDateDebutPromo] = useState(null);
+const [dateFinPromo, setDateFinPromo] = useState(null);
+const [showPickerDebut, setShowPickerDebut] = useState(false);
+const [showPickerFin, setShowPickerFin] = useState(false);
+
 
 useEffect(() => {
   initialiser();
@@ -89,8 +97,18 @@ const chargerProduitExistant = async () => {
       setStock(data.stock?.toString() || '');
       setPhotos_produit(data.photos_produit || []);
 
-    }
+      if(data.prix_promo != null) {
+   setEnPromo(true);
+   setPrixPromo(data.prix_promo.toString());
+   setDateDebutPromo(
+  data.date_debut_promo ? new Date(data.date_debut_promo) : null
+ );
+setDateFinPromo(
+data.date_fin_promo ? new Date(data.date_fin_promo) : null
+);
+ }
 
+}
   } catch (error) {
     console.error('Erreur chargement produit:', error);
     Alert.alert('Erreur', `Impossible de charger cet élément`);
@@ -159,10 +177,40 @@ return data.publicUrl;
 };
 
 const handleSubmit = async () => {
+
 if(!nom_produit || !prix_produit || !stock) {
   Alert.alert ('Erreur', 'Veuillez remplir tous les champs obligatoires');
   return;
 }
+
+if(enPromo) {
+
+ if(!prixPromo || !dateDebutPromo || !dateFinPromo) {
+  Alert.alert(
+    'Promo incomplète',
+    'Renseignez le prix promo, la date de début et la date de fin.'
+  );
+  return;
+ }
+
+ if(parseFloat(prixPromo) >= parseFloat(prix_produit)) {
+  Alert.alert(
+    'Prix promo invalide',
+    'Le prix promo doit être inférieur au prix normal.'
+  );
+  return;
+
+ }
+
+ if(dateFinPromo <= dateDebutPromo) {
+  Alert.alert(
+    'Date incohérentes',
+    'La date de fin doit être après la date de début'
+  );
+  return;
+ }
+}
+
 try{
 setUpLoading(true);
 
@@ -185,13 +233,16 @@ if(url) photoUrls.push(url);
 }
 
 
-
 const donneesProduit = {
   nom_produit,
   description_pro,
   prix_produit: parseFloat(prix_produit),
   stock: parseInt(stock),
-  photos_produit: photoUrls.length > 0 ? photoUrls : photos_produit, // garde les anciennes photos si pas de nouvelles
+  photos_produit: photoUrls.length > 0 ? photoUrls : photos_produit, 
+
+  prix_promo: enPromo ? parseFloat(prixPromo) : null,
+  date_debut_promo: enPromo ? dateDebutPromo.toISOString() : null,
+  date_fin_promo: enPromo ? dateFinPromo.toISOString() : null,
   
 };
 
@@ -292,7 +343,125 @@ const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
               </View>
             </View>
 
-            <View style={styles.inputGroup}>
+            {/* ⭐ SECTION PROMO */}
+            <View style={styles.promoSection}>
+              <TouchableOpacity
+                style={styles.promoHeader}
+                onPress={() => setEnPromo(!enPromo)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.promoHeaderLeft}>
+                  <Ionicons
+                    name={enPromo ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={enPromo ? '#2563EB' : '#9CA3AF'}
+                  />
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.promoTitle}>Mettre en promotion</Text>
+                    <Text style={styles.promoSubtitle}>
+                      Réduisez le prix pendant une période
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="pricetag" size={20} color="#EF4444" />
+              </TouchableOpacity>
+
+              {enPromo && (
+                <View style={styles.promoBody}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Prix promo (Ar) *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Ex: 75000"
+                      keyboardType="numeric"
+                      value={prixPromo}
+                      onChangeText={setPrixPromo}
+                    />
+                    {prix_produit && prixPromo && parseFloat(prixPromo) < parseFloat(prix_produit) && (
+                      <Text style={styles.promoHint}>
+                        Réduction : -
+                        {Math.round(
+                          (1 - parseFloat(prixPromo) / parseFloat(prix_produit)) * 100
+                        )}
+                        %
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.row}>
+                    <View style={[styles.inputGroup, styles.halfWidth]}>
+                      <Text style={styles.label}>Du *</Text>
+                      <TouchableOpacity
+                        style={styles.dateBtn}
+                        onPress={() => setShowPickerDebut(true)}
+                      >
+                        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+                        <Text
+                          style={[
+                            styles.dateBtnText,
+                            !dateDebutPromo && styles.dateBtnPlaceholder,
+                          ]}
+                        >
+                          {dateDebutPromo
+                            ? dateDebutPromo.toLocaleDateString('fr-FR')
+                            : 'Choisir'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={[styles.inputGroup, styles.halfWidth]}>
+                      <Text style={styles.label}>Au *</Text>
+                      <TouchableOpacity
+                        style={styles.dateBtn}
+                        onPress={() => setShowPickerFin(true)}
+                      >
+                        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+                        <Text
+                          style={[
+                            styles.dateBtnText,
+                            !dateFinPromo && styles.dateBtnPlaceholder,
+                          ]}
+                        >
+                          {dateFinPromo
+                            ? dateFinPromo.toLocaleDateString('fr-FR')
+                            : 'Choisir'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {showPickerDebut && (
+                    <DateTimePicker
+                      value={dateDebutPromo || new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      minimumDate={new Date()}
+                      onChange={(event, selectedDate) => {
+                        if (Platform.OS === 'android') setShowPickerDebut(false);
+                        if (event.type === 'dismissed') return;
+                        if (selectedDate) setDateDebutPromo(selectedDate);
+                      }}
+                    />
+                  )}
+
+                  {showPickerFin && (
+                    <DateTimePicker
+                      value={dateFinPromo || dateDebutPromo || new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      minimumDate={dateDebutPromo || new Date()}
+                      onChange={(event, selectedDate) => {
+                        if (Platform.OS === 'android') setShowPickerFin(false);
+                        if (event.type === 'dismissed') return;
+                        if (selectedDate) setDateFinPromo(selectedDate);
+                      }}
+                    />
+                  )}
+                </View>
+              )}
+            </View>
+
+   <View style={styles.inputGroup}>
   <Text style={styles.label}>Photo</Text>
 
   {photos_produit.length === 0 ? (
@@ -406,4 +575,65 @@ changePhotoButtonText: {
     alignItems:'center'
   },
   helperText: {fontSize: 12, color: "#9CA3AF", marginTop: 4},
+
+  // ⭐ PROMO
+  promoSection: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  promoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  promoHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  promoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  promoSubtitle: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 1,
+  },
+  promoBody: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#FDE68A',
+  },
+  promoHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16A34A',
+    marginTop: 6,
+  },
+  dateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dateBtnText: {
+    fontSize: 14,
+    color: '#111827',
+    flex: 1,
+  },
+  dateBtnPlaceholder: {
+    color: '#9CA3AF',
+  },
 });

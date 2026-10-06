@@ -34,15 +34,19 @@ import ProReservation from '../screens/ProReservation';
 import EditVehicule from '../screens/EditVehicule';
 import TicketScreen from '../screens/TicketScreen';
 import AddProduit from '../screens/Produits/AddProduit';
-import CompanyProduits from '../screens/Produits/CompanyProduits';
 import CartScreen from '../screens/Produits/CartScreen';
 import OrderScreen from '../screens/Produits/Client/OrderScreen';
 import ClientOrderScreen from '../screens/Produits/Client/ClientOrderScreen';
 import ClientOrderDetail from '../screens/Produits/Client/ClientOrderDetail';
 import ProOrderScreen from '../screens/Produits/Pro/ProOrderScreen';
+import IndisponibiliteScreen from  '../screens/Produits/Pro/IndisponibiliteScreen';
 import ProOrderDetailScreen from '../screens/Produits/Pro/ProOrderDetail';
 import NotificationsScreen from '../screens/NotificationsScreeen';
 import MesProduits from '../screens/Produits/Pro/MesProduits';
+import PaymentScreen from '../screens/Produits/Client/PayementScreen';
+import AddTrajetScreen from '../screens/AddTrajetScreen';
+import MesFavorisScreen from '../screens/MesFavorisScreen';
+
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -58,12 +62,12 @@ function HomeStack() {
       <Stack.Screen name="Places" component={PlaceScreen} />
       <Stack.Screen name="MesReservations" component={MesReservationsScreen} />
       <Stack.Screen name="AddVehicle" component={AddVehiculeScreen} />
+      <Stack.Screen name="AddTrajet" component={AddTrajetScreen} />
       <Stack.Screen name="MesVehicules" component={MesVehiculesScreen} />
       <Stack.Screen name="ProReservation" component={ProReservation} />
       <Stack.Screen name="EditVehicule" component={EditVehicule} />
       <Stack.Screen name="TicketScreen" component={TicketScreen} />
       <Stack.Screen name="AddProduit" component={AddProduit} />
-      <Stack.Screen name="CompanyProduits" component={CompanyProduits} />
       <Stack.Screen name="Order" component={OrderScreen} />
       <Stack.Screen name="ClientOrders" component={ClientOrderScreen} />
       <Stack.Screen name="ClientOrderDetail" component={ClientOrderDetail} />
@@ -73,6 +77,9 @@ function HomeStack() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="MesProduits" component={MesProduits} />
+      <Stack.Screen name='indisponibilite' component={IndisponibiliteScreen}/>
+       <Stack.Screen name='Payment' component={PaymentScreen}/>
+       <Stack.Screen name="MesFavoris" component={MesFavorisScreen} />
     </Stack.Navigator>
   );
 }

@@ -26,12 +26,10 @@ const itemCount = getItemCount();
 
 const [categorieEntreprise, setCategorieEntreprise] = useState(null);
 
-// Toute la logique "cette catégorie a besoin de quoi" vient d'un seul
-// endroit centralisé (Config/categorieConfig.js), pas codée ici en dur.
+
 const config = getConfigCategorie(categorieEntreprise);
 const mots = config.vocabulaire;
 
-// Charge la catégorie de l'entreprise pour savoir quelle config appliquer
 useEffect(() => {
   const chargerCategorie = async () => {
     if (!idEntreprise) {

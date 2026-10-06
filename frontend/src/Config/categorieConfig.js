@@ -104,6 +104,32 @@ export const CATEGORIE_CONFIG = {
     ],
   },
 
+  'Restaurant': {
+  besoinDuree: false,
+  besoinAdresse: true,
+  vocabulaire: {
+    produit: 'plat',
+    produitPluriel: 'plats',
+    article: 'plat',
+    articlePluriel: 'plats',
+    panier: 'panier',
+    commande: 'commande',
+    commandePluriel: 'commandes',
+    livraison: 'livraison',
+    verbeCommande: 'Commander',
+    stock: 'Plats disponibles',
+    description: 'Description du plat',
+    prix: 'Prix',
+  },
+  raisonsAnnulation: [
+    'Rupture de stock',
+    'Trop de commandes en cours',
+    'Ingrédient manquant',
+    'Erreur de prix',
+    'Autre',
+  ],
+},
+
   // Catégorie par défaut : Vente, Restaurant, Pharmacie, Pressing, etc.
   default: {
     besoinDuree: false,

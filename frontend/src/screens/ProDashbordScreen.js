@@ -1,4 +1,4 @@
-import React, { useState} from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -20,161 +20,153 @@ export default function ProDashbordScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [entreprise, setEntreprise] = useState(null);
   const [stats, setStats] = useState({
-   vehicules: 0, 
-   reservations: 0, 
-   produits: 0,
-   commandes: 0, 
-   enAttente: 0,
+    vehicules: 0,
+    reservations: 0,
+    produits: 0,
+    commandes: 0,
+    enAttente: 0,
   });
-  
   const [mots, setMots] = useState(getConfigCategorie(null).vocabulaire);
 
   const loadData = async () => {
-  try {
-    const { data: entrepriseData, error: entrepriseError } = await supabase
-    .from('entreprises')
-    .select('*, categories(nom)')
-    .eq('utilisateur_id', user.id)
-    .maybeSingle();
+    try {
+      const { data: entrepriseData, error: entrepriseError } = await supabase
+        .from('entreprises')
+        .select('*, categories(nom)')
+        .eq('utilisateur_id', user.id)
+        .maybeSingle();
 
-if (entrepriseError) throw entrepriseError;
+      if (entrepriseError) throw entrepriseError;
 
-if (entrepriseData) {
-  setEntreprise(entrepriseData);
+      if (entrepriseData) {
+        setEntreprise(entrepriseData);
 
-  const categorieNom = entrepriseData.categories?.nom;
+        const categorieNom = entrepriseData.categories?.nom;
 
+        if (categorieNom === 'Transport') {
+          // === STATS TRANSPORT ===
 
-  if(categorieNom === 'Transport') {
+          // 1. Nombre de véhicules
+          const { count: nbVehicules } = await supabase
+            .from('vehicules')
+            .select('*', { count: 'exact', head: true })
+            .eq('id_entreprise', entrepriseData.id);
 
-  const { count: nbVehicules } = await supabase
-    .from('vehicules')
-    .select('*', { count: 'exact', head: true })
-    .eq('id_entreprise', entrepriseData.id);
+          // 2. Récupérer les trajets des véhicules de cette entreprise
+          const { data: trajetsData } = await supabase
+            .from('trajets')
+            .select('id_trajet, vehicules!inner (id_entreprise)')
+            .eq('vehicules.id_entreprise', entrepriseData.id);
 
-  const { data: vehiculesIds } = await supabase
-    .from('vehicules')
-    .select('id_vehicule')
-    .eq('id_entreprise', entrepriseData.id);
+          const idsTrajets = (trajetsData || []).map((t) => t.id_trajet);
 
-  const idsVehicules = (vehiculesIds || []).map((v) => v.id_vehicule);
+          // 3. Compter les réservations sur ces trajets
+          let nbReservations = 0;
+          let nbEnAttente = 0;
+          if (idsTrajets.length > 0) {
+            const { data: reservationsData, error: reservationsError } =
+              await supabase
+                .from('reservation_transport')
+                .select('statut')
+                .in('id_trajet', idsTrajets);
 
-  let nbReservations = 0;
-  let nbEnAttente = 0;
-  if (idsVehicules.length > 0) {
-    const { data: reservationsData, error: reservationsError } = await supabase
-      .from('reservation_transport')
-      .select('statut')
-      .in('id_vehicule', idsVehicules);
+            if (reservationsError) throw reservationsError;
 
-    if (reservationsError) throw reservationsError;
+            nbReservations = (reservationsData || []).length;
+            nbEnAttente = (reservationsData || []).filter(
+              (r) => r.statut === 'en_attente'
+            ).length;
+          }
 
-    nbReservations = (reservationsData || []).length;
-    nbEnAttente = (reservationsData || []).filter((r) => r.statut === 'en_attente').length;
-  }
+          setStats({
+            vehicules: nbVehicules || 0,
+            reservations: nbReservations,
+            produits: 0,
+            commandes: 0,
+            enAttente: nbEnAttente,
+          });
+        } else {
+          // === STATS GÉNÉRIQUES (produits / commandes) ===
+          const config = getConfigCategorie(categorieNom || null);
+          setMots(config.vocabulaire);
 
-  setStats({
-    vehicules: nbVehicules || 0,
-    reservations: nbReservations,
-    produits: 0,
-    commandes: 0,
-    enAttente: nbEnAttente,
-  });
+          const { count: nbProduits } = await supabase
+            .from('produits')
+            .select('*', { count: 'exact', head: true })
+            .eq('id_entreprise', entrepriseData.id);
 
-}else{
+          const { count: nbCommandes } = await supabase
+            .from('commande')
+            .select('*', { count: 'exact', head: true })
+            .eq('id_entreprise', entrepriseData.id);
 
-  
-  const config = getConfigCategorie(categorieNom || null);
-  setMots(config.vocabulaire);
+          const { count: nbEnAttente } = await supabase
+            .from('commande')
+            .select('*', { count: 'exact', head: true })
+            .eq('id_entreprise', entrepriseData.id)
+            .eq('statut', 'en_attente');
 
-  const{ count : nbProduits} = await supabase
-  .from('produits')
-  .select('*', { count : 'exact' , head: true})
-  .eq('id_entreprise', entrepriseData.id);
-
- 
-  const {count :  nbCommandes} = await supabase
-  .from('commande')
-  .select('*', { count : 'exact', head: true})
-  .eq('id_entreprise', entrepriseData.id);
-
-  const {count : nbEnAttente} = await supabase
-  .from('commande')
-  .select('*', { count :'exact',head: true})
-  .eq('id_entreprise', entrepriseData.id)
-  .eq('statut', 'en_attente');
-
-  setStats({
-    vehicules: 0,
-    reservations: 0,
-    produits: nbProduits || 0 ,
-    commandes: nbCommandes || 0,
-    enAttente: nbEnAttente || 0,
-  });
-  return categorieNom;
-}
-return null;
-}
-} catch (error) {
+          setStats({
+            vehicules: 0,
+            reservations: 0,
+            produits: nbProduits || 0,
+            commandes: nbCommandes || 0,
+            enAttente: nbEnAttente || 0,
+          });
+        }
+      }
+    } catch (error) {
       console.error('Erreur chargement dashboard:', error);
     } finally {
       setLoading(false);
     }
   };
 
+  const checkNewReservations = async () => {
+    try {
+      const { data: entreprises } = await supabase
+        .from('entreprises')
+        .select('id')
+        .eq('utilisateur_id', user.id);
 
-   const checkNewReservations = async () => {
-  try {
-    const { data: entreprises } = await supabase
-      .from('entreprises')
-      .select('id')
-      .eq('utilisateur_id', user.id);
+      if (!entreprises || entreprises.length === 0) return;
 
-    if (!entreprises || entreprises.length === 0) return;
+      const idEntreprise = entreprises[0].id;
 
-    const idEntreprise = entreprises[0].id;
+      // 1. Récupérer les trajets de cette entreprise
+      const { data: trajets } = await supabase
+        .from('trajets')
+        .select('id_trajet, vehicules!inner (id_entreprise)')
+        .eq('vehicules.id_entreprise', idEntreprise);
 
-    const { data: vehicules } = await supabase
-      .from('vehicules')
-      .select('id_vehicule')
-      .eq('id_entreprise', idEntreprise);
+      if (!trajets || trajets.length === 0) return;
 
-    if (!vehicules || vehicules.length === 0) return;
+      const idsTrajets = trajets.map((t) => t.id_trajet);
 
-    const idsVehicules = vehicules.map(v => v.id_vehicule);
+      // 2. Compter les réservations en attente sur ces trajets
+      const { count } = await supabase
+        .from('reservation_transport')
+        .select('*', { count: 'exact', head: true })
+        .in('id_trajet', idsTrajets)
+        .eq('statut', 'en_attente');
 
-    const { count } = await supabase
-      .from('reservation_transport')
-      .select('*', { count: 'exact', head: true })
-      .in('id_vehicule', idsVehicules)
-      .eq('statut', 'en_attente');
-
-    if (count > 0) {
-      Alert.alert(
-        'Nouvelles réservations',
-        `Vous avez ${count} nouvelle(s) réservation(s) en attente.`,
-        [
-          { text: 'Voir', onPress: () => navigation.navigate('ProReservation') },
-          { text: 'Plus tard', style: 'cancel' }
-        ]
-      );
+    } catch (error) {
+      console.error('Erreur check notif:', error);
     }
-  } catch (error) {
-    console.error(' Erreur check notif:', error);
-  }
-};
+  };
 
- useFocusEffect(
-  React.useCallback(() => {
-    const run = async () => {
-      const categorieNom = await loadData();
-      if (categorieNom === 'Transport') {
-        checkNewReservations();
-      }
-    };
-    run();
-  }, [user?.id])
-);
+  useFocusEffect(
+    React.useCallback(() => {
+      const run = async () => {
+        await loadData();
+        // On vérifie les nouvelles réservations seulement si c'est une entreprise Transport
+        if (entreprise?.categories?.nom === 'Transport') {
+          checkNewReservations();
+        }
+      };
+      run();
+    }, [user?.id, entreprise?.categories?.nom])
+  );
 
   if (loading) {
     return (
@@ -187,7 +179,9 @@ return null;
   if (!entreprise) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.noCompanyText}>Vous n'avez pas encore d'entreprise.</Text>
+        <Text style={styles.noCompanyText}>
+          Vous n'avez pas encore d'entreprise.
+        </Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => navigation.navigate('AddCompany')}
@@ -199,8 +193,12 @@ return null;
     );
   }
 
-  const produitPlurielLabel = mots.produitPluriel.charAt(0).toUpperCase() + mots.produitPluriel.slice(1);
-  const commandePlurielLabel = mots.commandePluriel.charAt(0).toUpperCase() + mots.commandePluriel.slice(1);
+  const produitPlurielLabel =
+    mots.produitPluriel.charAt(0).toUpperCase() +
+    mots.produitPluriel.slice(1);
+  const commandePlurielLabel =
+    mots.commandePluriel.charAt(0).toUpperCase() +
+    mots.commandePluriel.slice(1);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -209,199 +207,321 @@ return null;
         <View style={styles.headerCard}>
           <View style={styles.headerTop}>
             <View style={styles.avatarWrap}>
-              <Text style={styles.avatarText}>{entreprise.nom?.charAt(0)?.toUpperCase() || '?'}</Text>
+              <Text style={styles.avatarText}>
+                {entreprise.nom?.charAt(0)?.toUpperCase() || '?'}
+              </Text>
             </View>
             <View style={styles.headerInfo}>
               <Text style={styles.eyebrow}>Dashboard Pro</Text>
               <Text style={styles.title}>{entreprise.nom}</Text>
             </View>
           </View>
-          <View style={[
-            styles.statusBadge,
-            entreprise.statutvalidation === 'valide' && styles.statusValid,
-            entreprise.statutvalidation === 'en_attente' && styles.statusPending,
-            entreprise.statutvalidation !== 'valide' && entreprise.statutvalidation !== 'en_attente' && styles.statusRefused,
-          ]}>
+          <View
+            style={[
+              styles.statusBadge,
+              entreprise.statutvalidation === 'valide' && styles.statusValid,
+              entreprise.statutvalidation === 'en_attente' &&
+                styles.statusPending,
+              entreprise.statutvalidation !== 'valide' &&
+                entreprise.statutvalidation !== 'en_attente' &&
+                styles.statusRefused,
+            ]}
+          >
             <Ionicons
               name={
-                entreprise.statutvalidation === 'valide' ? 'checkmark-circle' :
-                entreprise.statutvalidation === 'en_attente' ? 'time' :
-                'close-circle'
+                entreprise.statutvalidation === 'valide'
+                  ? 'checkmark-circle'
+                  : entreprise.statutvalidation === 'en_attente'
+                  ? 'time'
+                  : 'close-circle'
               }
               size={14}
               color={
-                entreprise.statutvalidation === 'valide' ? '#16A34A' :
-                entreprise.statutvalidation === 'en_attente' ? '#D97706' :
-                '#DC2626'
+                entreprise.statutvalidation === 'valide'
+                  ? '#16A34A'
+                  : entreprise.statutvalidation === 'en_attente'
+                  ? '#D97706'
+                  : '#DC2626'
               }
             />
             <Text style={styles.statusText}>
-              {entreprise.statutvalidation === 'valide' ? 'Validée' :
-               entreprise.statutvalidation === 'en_attente' ? 'En attente' :
-               'Refusée'}
+              {entreprise.statutvalidation === 'valide'
+                ? 'Validée'
+                : entreprise.statutvalidation === 'en_attente'
+                ? 'En attente'
+                : 'Refusée'}
             </Text>
           </View>
         </View>
 
-        
-
-     {entreprise.statutvalidation === 'en_attente' && (
-      <View style={styles.infoCard}>
-       <Ionicons name="time-outline" size={22} color="#D97706" />
-       <Text style={styles.infoCardText}>
- Votre entreprise est en cours de validation par l'administrateur. La gestion sera disponible une fois validée.
-       </Text>
-      </View>
-     )}
-
-     {entreprise.statutvalidation !== 'valide' && entreprise.statutvalidation !== 'en_attente' &&(
-      <View style={[styles.infoCard, styles.infoCardRefus]}>
-   <Ionicons name="close-circle-outline" size={22} color="#DC2626" />
-     <View style={{ flex: 1}}>
-    <Text style={styles.infoCardText}>
-                   Votre entreprise a été refusée{entreprise.raison_refus ? ` : ${entreprise.raison_refus}` : '.'}
-      </Text>
-      <TouchableOpacity
-      style={styles.editButton}
-      onPress={() => navigation.navigate('AddCompany', {entrepriseId: entreprise.id})}
-      >
-
-                <Ionicons name="create-outline" size={16} color="#fff" />
-                <Text style={styles.editButtonText}>Modifier mon entreprise</Text>
-      </TouchableOpacity>
-     </View>
-      </View>
-     )}
-
- {entreprise.statutvalidation === 'valide' && (
-        <>
-        {/* Menu des actions */}
-        <View style={styles.menuSection}>
-          <View style={styles.menuSectionHeader}>
-            <Text style={styles.sectionTitle}>Gestion</Text>
-            {/* MODIFIÉ : petit bouton crayon pour modifier l'entreprise
-                même quand tout va bien (pas seulement en cas de refus) */}
-            <TouchableOpacity
-              onPress={() => navigation.navigate('AddCompany', { entrepriseId: entreprise.id })}
-            >
-              <Ionicons name="create-outline" size={20} color="#2563EB" />
-            </TouchableOpacity>
-          </View>
-
-      {entreprise.categories?.nom == 'Transport' ? (
-         <>
-         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <View style={[styles.statIconWrap, { backgroundColor: '#EFF6FF' }]}>
-              <Ionicons name="bus" size={16} color="#2563EB" />
-            </View>
-            <View>
-              <Text style={styles.statNumber}>{stats.vehicules}</Text>
-              <Text style={styles.statLabel}>Véhicules</Text>
-            </View>
-          </View>
-          <View style={styles.statCard}>
-            <View style={[styles.statIconWrap, { backgroundColor: '#ECFDF5' }]}>
-              <Ionicons name="calendar" size={16} color="#10B981" />
-            </View>
-            <View>
-              <Text style={styles.statNumber}>{stats.reservations}</Text>
-              <Text style={styles.statLabel}>Réservations</Text>
-            </View>
-          </View>
-        </View>
-           <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => navigation.navigate('AddVehicle')}
-          >
-            <Ionicons name="add-circle-outline" size={24} color="#007BFF" />
-            <Text style={styles.menuItemText}>Ajouter un véhicule</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => navigation.navigate('MesVehicules')}
-          >
-            <Ionicons name="list-outline" size={24} color="#28a745" />
-            <Text style={styles.menuItemText}>Mes véhicules</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.menuItem, styles.lastMenuItem]}
-            onPress={() => navigation.navigate('ProReservation')}
-          >
-            <Ionicons name="calendar-outline" size={24} color="#ffc107" />
-            <Text style={styles.menuItemText}>Mes réservations</Text>
-            {stats.enAttente > 0 && (
-              <View style={styles.notifBadge}>
-                <Text  style={styles.notifBadgeText}>{stats.enAttente}</Text>
-              </View>
-            )}
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-          </TouchableOpacity>
-         </>
-         ) : ( 
-           <>
-            <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <View style={[styles.statIconWrap, { backgroundColor: '#EFF6FF' }]}>
-              <Ionicons name="cube-outline" size={16} color="#2563EB" />
-            </View>
-            <View>
-              <Text style={styles.statNumber}>{stats.produits}</Text>
-              <Text style={styles.statLabel}>{produitPlurielLabel}</Text>
-            </View>
-          </View>
-          <View style={styles.statCard}>
-            <View style={[styles.statIconWrap, { backgroundColor: '#ECFDF5' }]}>
-              <Ionicons name="receipt-outline" size={16} color="#10B981" />
-            </View>
-            <View>
-              <Text style={styles.statNumber}>{stats.commandes}</Text>
-              <Text style={styles.statLabel}>{commandePlurielLabel}</Text>
-            </View>
-          </View>
-        </View>
-           <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('AddProduit')}>
-            <Ionicons name="add-circle-outline" size={24} color="#007BFF" />
-            <Text style={styles.menuItemText}>
-              Ajouter {mots.produit === 'produit' ? 'un' : 'une'} {mots.produit}
+        {entreprise.statutvalidation === 'en_attente' && (
+          <View style={styles.infoCard}>
+            <Ionicons name="time-outline" size={22} color="#D97706" />
+            <Text style={styles.infoCardText}>
+              Votre entreprise est en cours de validation par l'administrateur.
+              La gestion sera disponible une fois validée.
             </Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-           </TouchableOpacity>
-
-           <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => navigation.navigate('MesProduits')}
-          >
-            <Ionicons name="list-outline" size={24} color="#28a745" />
-            <Text style={styles.menuItemText}>Mes {mots.produitPluriel}</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.menuItem, styles.lastMenuItem]}
-            onPress={() => navigation.navigate('ProOrders')}
-          >
-            <Ionicons name="calendar-outline" size={24} color="#ffc107" />
-            <Text style={styles.menuItemText}>Mes {mots.commandePluriel} reçues</Text>
-            {stats.enAttente > 0 && (
-              <View style={styles.notifBadge}>
-                <Text  style={styles.notifBadgeText}>{stats.enAttente}</Text>
-              </View>
-            )}
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-          </TouchableOpacity>
-           </>
-      )}
-
-        </View>
-        </>
+          </View>
         )}
-       
-        {/* Version */}
+
+        {entreprise.statutvalidation !== 'valide' &&
+          entreprise.statutvalidation !== 'en_attente' && (
+            <View style={[styles.infoCard, styles.infoCardRefus]}>
+              <Ionicons
+                name="close-circle-outline"
+                size={22}
+                color="#DC2626"
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.infoCardText}>
+                  Votre entreprise a été refusée
+                  {entreprise.raison_refus
+                    ? ` : ${entreprise.raison_refus}`
+                    : '.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={() =>
+                    navigation.navigate('AddCompany', {
+                      entrepriseId: entreprise.id,
+                    })
+                  }
+                >
+                  <Ionicons name="create-outline" size={16} color="#fff" />
+                  <Text style={styles.editButtonText}>
+                    Modifier mon entreprise
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+        {entreprise.statutvalidation === 'valide' && (
+          <>
+            <View style={styles.menuSection}>
+              <View style={styles.menuSectionHeader}>
+                <Text style={styles.sectionTitle}>Gestion</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate('AddCompany', {
+                      entrepriseId: entreprise.id,
+                    })
+                  }
+                >
+                  <Ionicons name="create-outline" size={20} color="#2563EB" />
+                </TouchableOpacity>
+              </View>
+
+              {entreprise.categories?.nom === 'Transport' ? (
+                <>
+                  <View style={styles.statsGrid}>
+                    <View style={styles.statCard}>
+                      <View
+                        style={[
+                          styles.statIconWrap,
+                          { backgroundColor: '#EFF6FF' },
+                        ]}
+                      >
+                        <Ionicons name="bus" size={16} color="#2563EB" />
+                      </View>
+                      <View>
+                        <Text style={styles.statNumber}>{stats.vehicules}</Text>
+                        <Text style={styles.statLabel}>Véhicules</Text>
+                      </View>
+                    </View>
+                    <View style={styles.statCard}>
+                      <View
+                        style={[
+                          styles.statIconWrap,
+                          { backgroundColor: '#ECFDF5' },
+                        ]}
+                      >
+                        <Ionicons name="calendar" size={16} color="#10B981" />
+                      </View>
+                      <View>
+                        <Text style={styles.statNumber}>
+                          {stats.reservations}
+                        </Text>
+                        <Text style={styles.statLabel}>Réservations</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => navigation.navigate('AddVehicle')}
+                  >
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={24}
+                      color="#007BFF"
+                    />
+                    <Text style={styles.menuItemText}>Ajouter un véhicule</Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color="#ccc"
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => navigation.navigate('MesVehicules')}
+                  >
+                    <Ionicons name="list-outline" size={24} color="#28a745" />
+                    <Text style={styles.menuItemText}>Mes véhicules</Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color="#ccc"
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.menuItem, styles.lastMenuItem]}
+                    onPress={() => navigation.navigate('ProReservation')}
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={24}
+                      color="#ffc107"
+                    />
+                    <Text style={styles.menuItemText}>Mes réservations</Text>
+
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color="#ccc"
+                    />
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <View style={styles.statsGrid}>
+                    <View style={styles.statCard}>
+                      <View
+                        style={[
+                          styles.statIconWrap,
+                          { backgroundColor: '#EFF6FF' },
+                        ]}
+                      >
+                        <Ionicons
+                          name="cube-outline"
+                          size={16}
+                          color="#2563EB"
+                        />
+                      </View>
+                      <View>
+                        <Text style={styles.statNumber}>{stats.produits}</Text>
+                        <Text style={styles.statLabel}>
+                          {produitPlurielLabel}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.statCard}>
+                      <View
+                        style={[
+                          styles.statIconWrap,
+                          { backgroundColor: '#ECFDF5' },
+                        ]}
+                      >
+                        <Ionicons
+                          name="receipt-outline"
+                          size={16}
+                          color="#10B981"
+                        />
+                      </View>
+                      <View>
+                        <Text style={styles.statNumber}>
+                          {stats.commandes}
+                        </Text>
+                        <Text style={styles.statLabel}>
+                          {commandePlurielLabel}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => navigation.navigate('AddProduit')}
+                  >
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={24}
+                      color="#007BFF"
+                    />
+                    <Text style={styles.menuItemText}>
+                      Ajouter {mots.produit === 'produit' ? 'un' : 'une'}{' '}
+                      {mots.produit}
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color="#ccc"
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => navigation.navigate('MesProduits')}
+                  >
+                    <Ionicons name="list-outline" size={24} color="#28a745" />
+                    <Text style={styles.menuItemText}>
+                      Mes {mots.produitPluriel}
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color="#ccc"
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => navigation.navigate('ProOrders')}
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={24}
+                      color="#ffc107"
+                    />
+                    <Text style={styles.menuItemText}>
+                      Mes {mots.commandePluriel} reçues
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color="#ccc"
+                    />
+                  </TouchableOpacity>
+
+                  {mots.commande === 'réservation' && (
+                    <TouchableOpacity
+                      style={[styles.menuItem, styles.lastMenuItem]}
+                      onPress={() => navigation.navigate('indisponibilite')}
+                    >
+                      <Ionicons
+                        name="calendar-clear-outline"
+                        size={24}
+                        color="#DC2626"
+                      />
+                      <Text style={styles.menuItemText}>
+                        Gérer mes indisponibilités
+                      </Text>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={20}
+                        color="#ccc"
+                      />
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+            </View>
+          </>
+        )}
+
         <Text style={styles.version}>Bon Plan Madagascar v1.0</Text>
       </ScrollView>
     </SafeAreaView>
@@ -411,7 +531,12 @@ return null;
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
   scrollContent: { padding: 20, paddingBottom: 40 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
   headerCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -434,11 +559,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2563EB',
-  },
+  avatarText: { fontSize: 20, fontWeight: 'bold', color: '#2563EB' },
   headerInfo: { flex: 1 },
   eyebrow: {
     fontSize: 11,
@@ -448,7 +569,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 2,
   },
-  title: { fontSize: 19, fontWeight: 'bold', color: '#111827', letterSpacing: -0.3 },
+  title: {
+    fontSize: 19,
+    fontWeight: 'bold',
+    color: '#111827',
+    letterSpacing: -0.3,
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -463,7 +589,12 @@ const styles = StyleSheet.create({
   statusPending: { backgroundColor: '#FEF3C7' },
   statusRefused: { backgroundColor: '#FEE2E2' },
   statusText: { fontSize: 13, fontWeight: '500', color: '#374151' },
-  statsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 10 },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    gap: 10,
+  },
   statCard: {
     flex: 1,
     flexDirection: 'row',
@@ -483,11 +614,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statNumber: { fontSize: 18, fontWeight: 'bold', color: '#111827', letterSpacing: -0.5 },
-  statLabel: { fontSize: 11, color: '#6B7280', marginTop: 1, fontWeight: '500' },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    letterSpacing: -0.5,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 1,
+    fontWeight: '500',
+  },
   menuSection: { backgroundColor: '#fff', borderRadius: 12, padding: 16 },
-  menuSectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50', marginBottom: 0 },
+  menuSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginBottom: 0,
+  },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -511,9 +662,20 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   editButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
   lastMenuItem: { borderBottomWidth: 0 },
-  menuItemText: { flex: 1, fontSize: 16, color: '#2c3e50', marginLeft: 12 },
+  menuItemText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#2c3e50',
+    marginLeft: 12,
+  },
   notifBadge: {
     backgroundColor: '#DC2626',
     minWidth: 22,

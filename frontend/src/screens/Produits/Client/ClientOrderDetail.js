@@ -13,6 +13,8 @@ import {SafeAreaView} from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../lib/supabase';
 import { getConfigCategorie } from '../../../Config/categorieConfig';
+import {formatDateHeure, formatDateSimple as formatDateSimpleUtil} from '../../../lib/formatDate'
+
 
 export default function ClientOrderDetail({ navigation, route }) {
   const { commandeId } = route.params;
@@ -26,6 +28,7 @@ export default function ClientOrderDetail({ navigation, route }) {
         .from('commande')
         .select(`
           id_commande,
+          id_entreprise,
           reference,
           statut,
           prix_total,
@@ -36,6 +39,9 @@ export default function ClientOrderDetail({ navigation, route }) {
           telephone_livraison,
           notes,
           mode_paiement,
+          paye,
+          mode_paiement_reel,
+          date_paiement,
           entreprises (nom, logo, categories (nom)),
           ligne_commande (
             quantite,
@@ -102,29 +108,11 @@ export default function ClientOrderDetail({ navigation, route }) {
     return STATUTS[statut] || STATUTS.en_attente;
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Date inconnue';
-    const date = new Date(dateString);
+const formatDate = formatDateHeure;
+ 
 
-    return date.toLocaleString('fr-FR', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-     timeZone: 'Indian/Antananarivo',
-    });
-  };
+const formatDateSimple = formatDateSimpleUtil;
 
-  const formatDateSimple = (dateString) => {
-    if (!dateString) return null;
-    const date = new Date(dateString);
-    return date.toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    });
-  };
 
   if (loading) {
     return (
@@ -337,6 +325,72 @@ export default function ClientOrderDetail({ navigation, route }) {
           <Text style={styles.dateText}>{formatDate(commande.date_commande)}</Text>
         </View>
 
+         {/* NOUVELLE CARTE : Paiement */}
+        {besoinDuree && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>💰 Paiement</Text>
+
+            {commande.paye ? (
+              <>
+                <View style={styles.infoRow}>
+                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                  <Text style={[styles.infoText, { color: '#10B981', fontWeight: '600' }]}>
+                    Payée
+                  </Text>
+                </View>
+                {commande.mode_paiement_reel && (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="card-outline" size={18} color="#6B7280" />
+                    <Text style={styles.infoText}>
+                      Méthode : {commande.mode_paiement_reel}
+                    </Text>
+                  </View>
+                )}
+                {commande.date_paiement && (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+                    <Text style={styles.infoText}>
+                      Payée le : {formatDate(commande.date_paiement)}
+                    </Text>
+                  </View>
+                )}
+              </>
+            ) : commande.statut === 'confirmée' ? (
+              <View style={styles.infoRow}>
+                <Ionicons name="time-outline" size={18} color="#F59E0B" />
+                <Text style={[styles.infoText, { color: '#F59E0B' }]}>
+                  En attente de paiement
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.infoRow}>
+                <Ionicons name="hourglass-outline" size={18} color="#9CA3AF" />
+                <Text style={[styles.infoText, { color: '#9CA3AF' }]}>
+                  Le paiement sera disponible après confirmation du pro
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+               {/* Bouton Payer (si confirmée et non payée) */}
+        {besoinDuree &&
+          commande.statut === 'confirmée' &&
+          !commande.paye && (
+            <TouchableOpacity
+              style={styles.payerButton}
+              onPress={() =>
+                navigation.navigate('Payment', { commande })
+              }
+              disabled={updating}
+            >
+              <Ionicons name="card-outline" size={20} color="#fff" />
+              <Text style={styles.payerButtonText}>
+                Payer ma {mots.commande}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+        {/* Bouton Annuler (si en attente) */}
         {commande.statut === 'en_attente' && (
           <TouchableOpacity
             style={styles.annulerButton}
@@ -536,4 +590,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+    payerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E3A5F',
+    borderRadius: 10,
+    paddingVertical: 16,
+    gap: 8,
+    marginTop: 16,
+    width: '100%',
+  },
+  payerButtonText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+
 });

@@ -28,20 +28,26 @@ export default function TicketScreen() {
   useEffect(() => {
     const loadReservation = async () => {
       try {
-        const { data, error } = await supabase
-          .from('reservation_transport')
-          .select(`
-            id_reservation,
-            date_reservation,
-            statut,
-            prix_total,
-            paye,
-            utilisateurs ( nom ),
-            vehicules ( nom, ville_depart, ville_arrivee, date_depart, heure_depart, entreprises ( nom ) ),
-            reservation_places ( places (numero_place) )
-          `)
-          .eq('id_reservation', idReservation)
-          .maybeSingle();
+      const { data, error } = await supabase
+  .from('reservation_transport')
+  .select(`
+    id_reservation,
+    date_reservation,
+    statut,
+    prix_total,
+    paye,
+    utilisateurs ( nom ),
+    trajets (
+      ville_depart,
+      ville_arrivee,
+      date_depart,
+      heure_depart,
+      vehicules ( nom, entreprises ( nom ) )
+    ),
+    reservation_places ( places (numero_place) )
+  `)
+  .eq('id_reservation', idReservation)
+  .maybeSingle();
 
         if (error) throw error;
 
@@ -49,18 +55,17 @@ export default function TicketScreen() {
           const numeros = (data.reservation_places || [])
             .map((rp) => rp.places?.numero_place)
             .filter(Boolean);
-
-          setReservation({
-            ...data,
-            client_nom: data.utilisateurs?.nom,
-            vehicule_nom: data.vehicules?.nom,
-            entreprise_nom: data.vehicules?.entreprises?.nom,
-            ville_depart: data.vehicules?.ville_depart,
-            ville_arrivee: data.vehicules?.ville_arrivee,
-            date_depart: data.vehicules?.date_depart,
-            heure_depart: data.vehicules?.heure_depart,
-            places: numeros.join(', '),
-          });
+           setReservation({
+        ...data,
+        client_nom: data.utilisateurs?.nom,
+        vehicule_nom: data.trajets?.vehicules?.nom,                     
+        entreprise_nom: data.trajets?.vehicules?.entreprises?.nom,      
+        ville_depart: data.trajets?.ville_depart,
+        ville_arrivee: data.trajets?.ville_arrivee,
+        date_depart: data.trajets?.date_depart,
+        heure_depart: data.trajets?.heure_depart,
+        places: numeros.join(', '),
+});
         }
       } catch (error) {
         console.error('Erreur de chargement de billet:', error);
