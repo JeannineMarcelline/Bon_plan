@@ -1,11 +1,11 @@
 import * as SQLite from 'expo-sqlite';
 
-// On réutilise le même fichier bonplan.db, mais dans des tables dédiées au cache
-// pour ne pas toucher à l'ancien schéma local (utilisateurs, entreprises, etc.)
+
 const db = SQLite.openDatabaseSync('bonplan.db');
 
 export const initOfflineCache = async () => {
   await db.execAsync(`
+
     CREATE TABLE IF NOT EXISTS cache_vehicules (
       id_vehicule INTEGER PRIMARY KEY,
       raw_json TEXT NOT NULL,
@@ -23,8 +23,103 @@ export const initOfflineCache = async () => {
       raw_json TEXT NOT NULL,
       cached_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS cache_generic (
+    key TEXT PRIMARY KEY,
+    raw_json TEXT NOT NULL,
+    cached_at NOT NULL
+    );
   `);
 };
+
+export const setCache = async(key, data) => {
+try{
+  const now = new Date().toISOString();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO cache_generic(key, raw_json, cached_at) VALUES (?, ?, ?)',
+    [key, JSON.stringify(data), now]
+  );
+}catch(error){
+console.error(`Erreur setCache(${key}):`, error);
+}
+};
+
+export const getCache = async (key) => {
+ try{
+  const row = await db.getFirstAsync(
+    'SELECT raw_json FROM cache_generic WHERE key = ?',
+    [key]
+  );
+
+  if(!row) return null;
+  return JSON.parse(row.raw_json);
+ }catch(error){
+
+  console.error(`Erreur getCache(${key}):`, error);
+  return null
+ }
+
+};
+
+export const getCacheMeta = async (key) => {
+ try{
+  const row = await db.getFirstAsync(
+    'SELECT  cached_at FROM cache_generic WHERE key = ?',
+    [key]
+  );
+
+ return row?.cached_at || null;
+ 
+ }catch(error){
+  console.error(`Erreur getCacheMeta(${key}):`, error);
+  return null
+ }
+};
+
+export const clearCache = async(key) => {
+
+try{
+
+await db.runAsync('DELETE FROM cache_generic WHERE key = ?', [key]);
+
+}catch(error){
+console.error(`Erreur clearCache(${key}):`, error);
+}
+};
+
+export const clearAllCache = async () => {
+try{
+  await db.execAsync( `
+  DELETE FROM cache_entreprises,
+  DELETE FROM cache_vehicules,
+  DELETE FROM cache_reservations,
+  DELETE FROM cache_generic;  
+    `);
+}catch(error){
+console.error('Erreur de clearAllCache:', error)
+}
+};
+
+
+export const getLastCacheUpdate = async () => {
+  try {
+    const row = await db.getFirstAsync(`
+      SELECT MAX(cached_at) AS last FROM (
+        SELECT cached_at FROM cache_generic
+        UNION ALL
+        SELECT cached_at FROM cache_entreprises
+        UNION ALL
+        SELECT cached_at FROM cache_reservations
+      )
+    `);
+    return row?.last || null;
+  } catch (error) {
+    console.error('Erreur getLastCacheUpdate:', error);
+    return null;
+  }
+};
+
+
 
 // ===== ENTREPRISES (HomeScreen) =====
 

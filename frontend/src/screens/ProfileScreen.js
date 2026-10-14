@@ -376,7 +376,7 @@ export default function ProfileScreen() {
             <View style={styles.menu}>
               <TouchableOpacity
                 style={[styles.menuItem, styles.menuItemLast]}
-                onPress={() => navigation.navigate('admin')}
+                onPress={() => navigation.navigate('admin', { screen: 'AdminDashbord' })}
                 activeOpacity={0.7}
               >
                 <View

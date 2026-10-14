@@ -23,18 +23,21 @@ export default function AdminScreen({ navigation }) {
     villes: 0,
     categories: 0,
   });
+
   const [entreprisesEnAttente, setEntreprisesEnAttente] = useState(0);
+  const [signalementsEnAttente, setSignalementsEnAttente] = useState(0);
 
   // ===== CHARGER LES STATISTIQUES (migré vers Supabase) =====
   useEffect(() => {
     const loadStats = async () => {
       try {
-        const [entreprises, utilisateurs, villes, categories, entreprisesPending] = await Promise.all([
+        const [entreprises, utilisateurs, villes, categories, entreprisesPending, signalementsPending,] = await Promise.all([
           supabase.from('entreprises').select('*', { count: 'exact', head: true }),
           supabase.from('utilisateurs').select('*', { count: 'exact', head: true }),
           supabase.from('villes').select('*', { count: 'exact', head: true }),
           supabase.from('categories').select('*', { count: 'exact', head: true }),
           supabase.from('entreprises').select('*', { count: 'exact', head: true }).eq('statutvalidation', 'en_attente'),
+          supabase.from('signalements').select('*',{count:'exact', head: true}).eq('statut', 'en_attente'),
         ]);
 
         if (entreprises.error) throw entreprises.error;
@@ -42,6 +45,7 @@ export default function AdminScreen({ navigation }) {
         if (villes.error) throw villes.error;
         if (categories.error) throw categories.error;
         if (entreprisesPending.error) throw entreprisesPending.error;
+        if(signalementsPending.error) throw signalementsPending.error;
 
         setStats({
           entreprises: entreprises.count || 0,
@@ -50,6 +54,7 @@ export default function AdminScreen({ navigation }) {
           categories: categories.count || 0,
         });
         setEntreprisesEnAttente(entreprisesPending.count || 0);
+        setSignalementsEnAttente(signalementsPending.count || 0);
       } catch (error) {
         console.error('Erreur chargement stats:', error);
         Alert.alert('Erreur', 'Impossible de charger les statistiques');
@@ -132,7 +137,7 @@ export default function AdminScreen({ navigation }) {
             </View>
           </View>
 
-          <View style={styles.statCard}>
+                   <View style={styles.statCard}>
             <View style={[styles.statIconWrap, { backgroundColor: '#F5F3FF' }]}>
               <Ionicons name="pricetags" size={16} color="#7C3AED" />
             </View>
@@ -141,7 +146,8 @@ export default function AdminScreen({ navigation }) {
               <Text style={styles.statLabel}>Catégories</Text>
             </View>
           </View>
-        </View>
+  </View>
+          
 
         {/* MODIFIE: Menu sans fond d'icônes, plus d'espace */}
         <View style={styles.menuSection}>
@@ -183,8 +189,25 @@ export default function AdminScreen({ navigation }) {
             <Text style={styles.menuItemText}>Gérer les utilisateurs</Text>
             <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuItem, styles.menuItemLast]}
+            onPress={() => navigation.navigate('admin', { screen: 'AdminSignalements' })}
+          >
+            <Ionicons name="flag-outline" size={22} color="#DC2626" />
+            <Text $ style={styles.menuItemText}>Gérer les signalements</Text>
+            {signalementsEnAttente > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{signalementsEnAttente}</Text>
+              </View>
+            )}
+            <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+          </TouchableOpacity>
+
+
         </View>
 
+      
         {/* Version */}
         <Text style={styles.version}>Bon Plan Madagascar v1.0 — Admin</Text>
       </ScrollView>

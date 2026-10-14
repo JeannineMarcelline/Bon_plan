@@ -9,20 +9,57 @@ import {
   StyleSheet,
   StatusBar,
   FlatList,
-  Modal
+  Modal,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import OfflineBanner from '../components/OfflineBanner';
 import { useFocusEffect } from '@react-navigation/native';
 import NetInfo from '@react-native-community/netinfo';
-import { initOfflineCache, setCacheEntreprises, getCacheEntreprises } from '../database/Offlinecache';
+import * as Location from 'expo-location';
+import {
+  initOfflineCache,
+  setCacheEntreprises,
+  getCacheEntreprises,
+  setCache,
+  getCache,
+} from '../database/Offlinecache';
+import { partagerNatif, messageBonPlan } from '../lib/shareHelper';
 
 
 function calcReduction(prixNormal, prixPromo) {
   if(!prixNormal || !prixPromo) return 0;
   return Math.round((1 - prixPromo / prixNormal) * 100);
+}
+
+// ⭐ Calcul de distance entre 2 points GPS (formule Haversine)
+function calculerDistance(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+
+  const R = 6371; // Rayon de la Terre en km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance en km
+}
+
+// ⭐ Formatage de la distance
+function formatDistance(km) {
+  if (km === null || km === undefined) return '';
+  if (km < 1) return `à ${Math.round(km * 1000)} m`;
+  if (km < 10) return `à ${km.toFixed(1)} km`;
+  return `à ${Math.round(km)} km`;
 }
 
 const PromoCard = memo(function PromoCard({promo, onPress}) {
@@ -79,6 +116,14 @@ activeOpacity={0.85}
         </Text>
    )}
 
+    <TouchableOpacity
+        style={styles.promoShareBtn}
+        onPress={() => partagerNatif(messageBonPlan(promo), 'Partager ce bon plan')}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Ionicons name="share-social-outline" size={14} color="#2563EB" />
+      </TouchableOpacity>
+
 </TouchableOpacity>
 );
 });
@@ -131,10 +176,9 @@ const PromoCardFull = memo(function PromoCardFull({ promo, onPress }) {
             {Number(promo.prix_promo).toLocaleString('fr-FR')} Ar
           </Text>
         </View>
-
         {joursRestants > 0 && (
           <View style={styles.promoJoursWrap}>
-            <Ionicons name="time-outline" size={11} marginTop='7' color="#EF4444" />
+            <Ionicons name="time-outline" size={11} marginTop='8' color="#EF4444" />
             <Text style={styles.promoJours}>
               {joursRestants === 1
                 ? 'Dernier jour'
@@ -142,6 +186,15 @@ const PromoCardFull = memo(function PromoCardFull({ promo, onPress }) {
             </Text>
           </View>
         )}
+
+        {/* ⭐ Bouton partage */}
+        <TouchableOpacity
+          style={styles.promoShareBtnFull}
+          onPress={() => partagerNatif(messageBonPlan(promo), 'Partager ce bon plan')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="share-social-outline" size={16} color="#2563EB" />
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -164,62 +217,93 @@ const [minNote, setMinNote] = useState(0);
 const [maxPrix, setMaxPrix] = useState(null);
 const [villesList, setViillesList] = useState([]);
 const [promos, setPromos] = useState([]);
+const [autourDeMoi, setAutourDeMoi] = useState(false);
+const [positionClient, setPositionClient] = useState(null);
+const [loadingPosition, setLoadingPosition] = useState(false);
 const [entreprisesEnPromo, setEntreprisesEnPromo] = useState([]);
 const [prixMinParEntreprise, setPrixMinParEntreprise] = useState({});
 
 
-// ⭐ Compte des filtres actifs (pour badge et bandeau)
 const nbFiltresActifs = [
   selectedVille !== '' ? selectedVille : null,
   minNote > 0 ? minNote : null,
   maxPrix !== null ? maxPrix : null,
+  autourDeMoi ? true : null,
 ].filter(Boolean).length;
 
 
 
-const filteredEntreprises = entreprises.filter((item) => {
-  const nom = item.nom || '';
-  const ville = item.ville || '';
-  const categorie = item.categorie || '';
+const filteredEntreprises = entreprises
+  .filter((item) => {
+    const nom = item.nom || '';
+    const ville = item.ville || '';
+    const categorie = item.categorie || '';
 
-  const matchText =
-    nom.toLowerCase().includes(searchText.toLocaleLowerCase()) ||
-    ville.toLowerCase().includes(searchText.toLocaleLowerCase()) ||
-    categorie.toLowerCase().includes(searchText.toLocaleLowerCase());
+    const matchText =
+      nom.toLowerCase().includes(searchText.toLocaleLowerCase()) ||
+      ville.toLowerCase().includes(searchText.toLocaleLowerCase()) ||
+      categorie.toLowerCase().includes(searchText.toLocaleLowerCase());
 
-  const matchVille = selectedVille ? item.ville === selectedVille : true;
-  const matchCategory = selectedCategory ? categorie === selectedCategory : true;
- const matchNote = minNote > 0 ? (item.note_moyenne || 0) >= minNote : true;
+    const matchVille = selectedVille ? item.ville === selectedVille : true;
+    const matchCategory = selectedCategory ? categorie === selectedCategory : true;
+    const matchNote = minNote > 0 ? (item.note_moyenne || 0) >= minNote : true;
+    const matchPromo = filtrePromo ? entreprisesEnPromo.includes(item.id) : true;
 
+    const prixMinEntreprise = prixMinParEntreprise[item.id];
+    const matchPrixFiltre = maxPrix
+      ? prixMinEntreprise != null && prixMinEntreprise <= maxPrix
+      : true;
 
-   // ⭐ Filtre "En promo"
-  const matchPromo = filtrePromo ? entreprisesEnPromo.includes(item.id) : true;
-
-  // ⭐ Filtre prix (basé sur le prix MIN des produits)
-  const prixMinEntreprise = prixMinParEntreprise[item.id];
-  const matchPrixFiltre = maxPrix
-    ? prixMinEntreprise != null && prixMinEntreprise <= maxPrix
-    : true;
-
-  return (
-    matchText &&
-    matchCategory &&
-    matchVille &&
-    matchNote &&
-    matchPromo &&
-    matchPrixFiltre
-  );
-});
+    return (
+      matchText &&
+      matchCategory &&
+      matchVille &&
+      matchNote &&
+      matchPromo &&
+      matchPrixFiltre
+    );
+  })
+  .map((item) => {
+    // ⭐ Calculer la distance pour chaque entreprise
+    let distance = null;
+    if (autourDeMoi && positionClient && item.latitude && item.longitude) {
+      distance = calculerDistance(
+        positionClient.latitude,
+        positionClient.longitude,
+        item.latitude,
+        item.longitude
+      );
+    }
+    return { ...item, distance };
+  })
+  .sort((a, b) => {
+    // ⭐ Si "Autour de moi" actif → trier par distance croissante
+    if (autourDeMoi) {
+      if (a.distance == null) return 1;
+      if (b.distance == null) return -1;
+      return a.distance - b.distance;
+    }
+    return 0; // Garde l'ordre initial
+  });
 
 
 const loadPromos = useCallback(async () => {
-try{
-  const maintenant = new Date().toISOString();
+  try {
+    const netState = await NetInfo.fetch();
 
-  const { data, error } = await supabase
-  .from('produits')
-  .select(`
-     id,
+    // Hors ligne → cache
+    if (!netState.isConnected) {
+      const cached = await getCache('promos');
+      if (cached) setPromos(cached);
+      return;
+    }
+
+    const maintenant = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('produits')
+      .select(`
+        id,
         nom_produit,
         prix_produit,
         prix_promo,
@@ -228,12 +312,15 @@ try{
         id_entreprise,
         entreprises!inner (
           id,
-          nom,
-          logo,
-          statutvalidation
+         nom,
+        logo,
+       adresse,
+     telephone,
+    statutvalidation,
+    villes ( nom )
         )
-    `)
-     .not('prix_promo', 'is', null)
+      `)
+      .not('prix_promo', 'is', null)
       .not('date_debut_promo', 'is', null)
       .not('date_fin_promo', 'is', null)
       .lte('date_debut_promo', maintenant)
@@ -243,36 +330,54 @@ try{
       .order('date_fin_promo', { ascending: true })
       .limit(10);
 
-  if(error) throw error;
-  setPromos(data || []);
+  if (error) throw error;
 
-   const idsUniques = [
-      ...new Set(
-        (data || [])
-          .map((p) => p.entreprises?.id || p.id_entreprise)
-          .filter(Boolean)
-      ),
-    ];
-    setEntreprisesEnPromo(idsUniques);
+const promosNormalisees = (data || []).map((p) => ({
+  ...p,
+  entreprises: p.entreprises
+    ? {
+        ...p.entreprises,
+        ville: p.entreprises.villes?.nom || '',
+      }
+    : null,
+}));
 
-}catch(error){
-console.error('Erreur de chargement de promos:', error);
-setPromos([]);
-}
+setPromos(promosNormalisees);
+await setCache('promos', promosNormalisees);
+  } catch (error) {
+    console.error('Erreur chargement promos:', error);
+    // Fallback cache
+    const cached = await getCache('promos');
+    if (cached) {
+      setPromos(cached);
+    } else {
+      setPromos([]);
+    }
+  }
 }, []);
 
 const loadCategories = async () => {
   try {
-    
+    const netState = await NetInfo.fetch();
+
+    if(!netState.isConnected){
+    const cached = await getCache('categories');
+
+    if(cached) setCategoriesList(cached);
+     return;
+    }
+
     const { data, error } = await supabase
       .from('categories')
       .select('*')
       .order('nom');
 
     if (error) throw error;
-    setCategoriesList(data);
+    setCategoriesList(data || []);
   } catch (error) {
     console.error('Erreur chargement catégories:', error);
+    const cached = await getCache('categories');
+    if(cached) setCategoriesList(cached);
   }
 }; 
 
@@ -361,8 +466,19 @@ useFocusEffect(
     setLoading(false);
   }
 };
+
+
   const loadVilles = async() => {
   try{
+    const netState = await NetInfo.fetch();
+
+    if(!netState.isConnected){
+      const cached = await getCache('villes');
+      if(cached) setViillesList(cached);
+      return;
+    }
+
+
     const { data, error } = await supabase
       .from('entreprises')
       .select('villes ( nom )')
@@ -376,8 +492,11 @@ useFocusEffect(
     const villesUniques = [...new Set(toutesLesVilles)].sort();
 
     setViillesList(villesUniques);
+    await setCache('villes', villesUniques);
   }catch(error){
-     console.error("Erreur de chargement de ville: ", error)
+     console.error("Erreur de chargement de ville: ", error);
+     const cached = await getCache('villes');
+     if(cached) setViillesList(cached);
   }
   } 
 
@@ -389,32 +508,47 @@ useFocusEffect(
     }, [])
   );
 
-  const renderCompany = ({ item }) => (
-    <TouchableOpacity
-      style={styles.companyCard}
-      onPress={() => navigation.navigate('Company', { id: item.id })}
-      activeOpacity={0.8}
-    >
-      <Image source={{ uri: item.photo }} style={styles.companyImage} />
-      <View style={styles.companyInfo}>
-        <Text style={styles.companyName}>{item.nom}</Text>
-        <View style={styles.companyMeta}>
-          <Ionicons name="location-outline" size={14} color="#666" />
-          <Text style={styles.companyVille}>{item.ville}</Text>
-        </View>
-        <View style={styles.companyMeta}>
-          <Ionicons name="pricetag-outline" size={14} color="#666" />
-          <Text style={styles.companyCategorie}>{item.categorie}</Text>
-        </View>
-        {item.note_moyenne > 0 ? (
-      <Text style={styles.rating}>⭐ {item.note_moyenne.toFixed(1)} ({item.nb_avis} avis)</Text>
-   ) : (
-     <Text style={styles.ratingEmpty}>Pas encore noté</Text>
-  )}
-      </View>
-      <Ionicons name="chevron-forward" size={20} color="#ccc" />
-    </TouchableOpacity>
-  );
+
+
+    // ⭐ ACTIVER/DÉSACTIVER "Autour de moi"
+  const toggleAutourDeMoi = useCallback(async () => {
+    if (autourDeMoi) {
+      setAutourDeMoi(false);
+      return;
+    }
+
+    setLoadingPosition(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission refusée',
+          'Autorisez la localisation pour utiliser cette fonctionnalité.'
+        );
+        setLoadingPosition(false);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      setPositionClient({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+      setAutourDeMoi(true);
+    } catch (error) {
+      console.error('Erreur localisation:', error);
+      Alert.alert(
+        'Localisation indisponible',
+        'Impossible de récupérer votre position. Vérifiez que le GPS est activé.'
+      );
+    } finally {
+      setLoadingPosition(false);
+    }
+  }, [autourDeMoi]);
 
     const resetFilters = () => {
     setSelectedVille('');
@@ -426,7 +560,10 @@ useFocusEffect(
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+      {/* Bandeau hors ligne  */}
       
+      <OfflineBanner />
+
       {/* Header avec logo et barre de recherche */}
       <View style={styles.header}>
         <Image source={require('../../assets/bonPlan.jpg')} style={styles.logo} />
@@ -488,6 +625,40 @@ useFocusEffect(
               </Text>
             </View>
           </TouchableOpacity>
+                   {/* ⭐ Bouton "Autour de moi" */}
+          <TouchableOpacity
+            style={[
+              styles.categoryButton,
+              styles.proximiteFilterButton,
+              autourDeMoi && styles.proximiteFilterButtonActive,
+            ]}
+            onPress={toggleAutourDeMoi}
+            activeOpacity={0.8}
+            disabled={loadingPosition}
+          >
+            <View style={styles.promoFilterContent}>
+              {loadingPosition ? (
+                <ActivityIndicator size="small" color="#2563EB" />
+              ) : (
+                <>
+                  <Ionicons
+                    name="location"
+                    size={12}
+                    color={autourDeMoi ? '#fff' : '#2563EB'}
+                  />
+                  <Text
+                    style={[
+                      styles.categoryButtonText,
+                      styles.proximiteFilterText,
+                      autourDeMoi && styles.proximiteFilterTextActive,
+                    ]}
+                  >
+                    Autour de moi
+                  </Text>
+                </>
+              )}
+            </View>
+          </TouchableOpacity> 
 
          {categoriesList.map((cat) => (
   <TouchableOpacity
@@ -552,6 +723,17 @@ useFocusEffect(
         </View>
       )}
 
+                  {autourDeMoi && (
+              <TouchableOpacity
+                style={styles.activeFilterChip}
+                onPress={() => setAutourDeMoi(false)}
+              >
+                <Ionicons name="location" size={12} color="#1E3A5F" />
+                <Text style={styles.activeFilterChipText}>Autour de moi</Text>
+                <Ionicons name="close" size={12} color="#6B7280" />
+              </TouchableOpacity>
+            )}
+
       {/* Liste des entreprises améliorée */}
       <FlatList
         data={filteredEntreprises}
@@ -576,9 +758,14 @@ useFocusEffect(
                 <Ionicons name="pricetag-outline" size={14} color="#7f8c8d" />
                 <Text style={styles.category}>{item.categorie}</Text>
               </View>
-              <View style={styles.infoRow}>
+                           <View style={styles.infoRow}>
                 <Ionicons name="location-outline" size={14} color="#7f8c8d" />
-                <Text style={styles.location}>{item.ville}</Text>
+                <Text style={styles.location}>
+                  {item.ville}
+                  {autourDeMoi && item.distance != null
+                    ? ` · ${formatDistance(item.distance)}`
+                    : ''}
+                </Text>
               </View>
               {item.note_moyenne > 0 ? (
                 <View style={styles.ratingRow}>
@@ -1335,7 +1522,7 @@ const styles = StyleSheet.create({
     color: '#1E3A5F',
     letterSpacing: 0.2,
   },
-  sectionLabelCount: {
+   sectionLabelCount: {
     fontSize: 12,
     fontWeight: '700',
     color: '#6B7280',
@@ -1343,6 +1530,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
+  },
+
+  // ⭐ Filtre "Autour de moi"
+  proximiteFilterButton: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  proximiteFilterButtonActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  proximiteFilterText: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  proximiteFilterTextActive: {
+    color: '#fff',
   },
 
   // ⭐ Filtre "En promo"
@@ -1468,6 +1673,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1E3A5F',
   },
+    // ⭐ Partage bon plan
+  promoShareBtn: {
+    position: 'absolute',
+    top: 38,
+    right: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  promoShareBtnFull: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
 });
 
 

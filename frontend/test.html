@@ -3,334 +3,368 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Filtre Autour de moi — Maquette</title>
+<title>Modale produit — Option A corrigée</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
-  body { background:#e5e7eb; display:flex; justify-content:center; padding:20px; gap:24px; flex-wrap:wrap; }
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    background: linear-gradient(145deg, #d1d9e6 0%, #f0f4fa 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 30px 20px;
+  }
+
+  /* -------------------- Téléphone -------------------- */
   .phone {
-    width:390px; height:844px; background:#F5F6FA;
-    border-radius:40px; overflow:hidden; position:relative;
-    box-shadow:0 20px 60px rgba(0,0,0,.3);
+    width: 390px;
+    height: 844px;
+    background: #F8FAFC;
+    border-radius: 48px;
+    overflow: hidden;
+    position: relative;
+    box-shadow:
+      0 30px 50px -20px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.5) inset,
+      0 0 0 8px #1e293b;
   }
+
   .phone-label {
-    position:absolute; top:8px; left:50%; transform:translateX(-50%);
-    font-size:11px; color:#6B7280; font-weight:700; z-index:100;
-    background:#fff; padding:3px 12px; border-radius:10px;
-    letter-spacing:.5px; text-transform:uppercase;
-  }
-  .scroll { height:100%; overflow-y:auto; padding:40px 0 30px; }
-  .scroll::-webkit-scrollbar { width:0; }
-
-  /* HEADER */
-  .top-mock {
-    background:#fff; padding:12px 16px;
-    display:flex; align-items:center; gap:12px;
-    border-bottom:1px solid #f0f0f0;
-  }
-  .search-mock {
-    flex:1; background:#f5f5f5; border-radius:25px;
-    padding:10px 16px; color:#999; font-size:14px;
-    display:flex; align-items:center; justify-content:space-between;
-  }
-
-  /* Barre catégories + Autour de moi */
-  .cats-bar {
-    background:#fff;
-    padding:10px 16px;
-    display:flex; gap:8px;
-    overflow-x:auto;
-    border-bottom:1px solid #f0f0f0;
-    align-items:center;
-  }
-  .cat {
-    padding:8px 16px;
-    border-radius:25px;
-    background:#f5f5f5;
-    font-size:12px; font-weight:600; color:#555;
-    white-space:nowrap; flex-shrink:0;
-  }
-  .cat.active { background:#1E3A5F; color:#fff; }
-
-  /* Bouton "Autour de moi" - inactif */
-  .nearby-btn {
-    display:flex; align-items:center; gap:5px;
-    padding:8px 14px;
-    border-radius:25px;
-    background:#EFF6FF;
-    border:1px solid #BFDBFE;
-    color:#2563EB;
-    font-size:12px; font-weight:700;
-    white-space:nowrap; flex-shrink:0;
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(4px);
+    padding: 6px 16px;
+    border-radius: 40px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    z-index: 200;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    border: 1px solid rgba(255,255,255,0.8);
+    white-space: nowrap;
   }
 
-  /* Bouton "Autour de moi" - actif */
-  .nearby-btn.active {
-    background:#2563EB;
-    border-color:#2563EB;
-    color:#fff;
-    box-shadow:0 4px 10px rgba(37,99,235,.3);
+  .bg-mock {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, #1E3A5F 0%, #2563EB 40%, #EFF6FF 100%);
+    opacity: 0.25;
+    z-index: 1;
   }
 
-  /* Bandeau filtres actifs */
-  .active-filters-bar {
-    background:#EFF6FF;
-    border-bottom:1px solid #BFDBFE;
-    padding:10px 16px;
-    display:flex; align-items:center; gap:8px;
-    font-size:12px;
-    overflow-x:auto;
+  /* -------------------- Modale -------------------- */
+  .modal {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #ffffff;
+    border-top-left-radius: 32px;
+    border-top-right-radius: 32px;
+    max-height: 92%;
+    overflow-y: auto;
+    box-shadow:
+      0 -20px 40px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(255,255,255,0.8) inset;
+    z-index: 10;
+    scrollbar-width: none;
+    display: flex;
+    flex-direction: column;
   }
-  .active-label {
-    color:#1E3A5F; font-weight:700; white-space:nowrap;
-  }
-  .active-chip {
-    display:flex; align-items:center; gap:4px;
-    background:#fff;
-    border:1px solid #BFDBFE;
-    padding:5px 10px;
-    border-radius:16px;
-    font-weight:600; color:#1E3A5F;
-    white-space:nowrap; flex-shrink:0;
-  }
-  .active-chip .close { color:#6B7280; font-size:14px; }
+  .modal::-webkit-scrollbar { display: none; }
 
-  /* Section label */
-  .section-label {
-    display:flex; justify-content:space-between; align-items:center;
-    padding:14px 16px 10px;
+  /* Image */
+  .modal-image-wrap {
+    position: relative;
+    height: 240px;
+    flex-shrink: 0;
+    border-top-left-radius: 32px;
+    border-top-right-radius: 32px;
+    overflow: hidden;
+    background: #F1F5F9;
   }
-  .section-label-text { font-size:15px; font-weight:800; color:#1E3A5F; }
-  .section-label-count {
-    font-size:12px; font-weight:700; color:#6B7280;
-    background:#F3F4F6; padding:2px 8px; border-radius:10px;
+  .modal-image-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 64px;
+    color: #94A3B8;
+    user-select: none;
   }
-
-  /* Cartes entreprises */
-  .card {
-    background:#fff; border-radius:16px;
-    padding:14px; margin:0 16px 12px;
-    display:flex; align-items:center; gap:14px;
-    box-shadow:0 2px 10px rgba(0,0,0,.06);
-    position:relative;
-  }
-  .card-img {
-    width:80px; height:80px; border-radius:12px;
-    background:linear-gradient(135deg,#DBEAFE,#93C5FD);
-    flex-shrink:0;
-    display:flex; align-items:center; justify-content:center;
-    font-size:30px;
-  }
-  .card-info { flex:1; }
-  .card-name { font-size:16px; font-weight:700; color:#1E3A5F; margin-bottom:3px; }
-  .card-meta { font-size:12px; color:#7f8c8d; margin-bottom:2px; }
-  .card-arrow { color:#ccc; font-size:20px; }
-
-  /* Badge distance */
-  .distance-badge {
-    position:absolute;
-    top:12px; right:12px;
-    display:flex; align-items:center; gap:3px;
-    background:#ECFDF5;
-    border:1px solid #A7F3D0;
-    color:#065F46;
-    font-size:11px; font-weight:700;
-    padding:3px 8px;
-    border-radius:8px;
-  }
-  .distance-badge.far {
-    background:#FEF3C7;
-    border-color:#FDE68A;
-    color:#92400E;
+  .modal-image-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.35), transparent);
+    pointer-events: none;
   }
 
-  /* Écran 2 : position non autorisée */
-  .empty-state {
-    padding:60px 30px;
-    text-align:center;
+  .close-btn {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 40px;
+    height: 40px;
+    border-radius: 40px;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid rgba(255,255,255,0.2);
+    z-index: 20;
   }
-  .empty-icon {
-    font-size:56px;
-    margin-bottom:16px;
-    opacity:.4;
+  .close-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+    transform: scale(1.05);
   }
-  .empty-title {
-    font-size:17px;
-    font-weight:700;
-    color:#374151;
-    margin-bottom:8px;
+
+  /* Corps de la modale */
+  .modal-body {
+    padding: 24px 24px 20px;
+    flex: 1;
   }
-  .empty-text {
-    font-size:14px;
-    color:#9CA3AF;
-    line-height:20px;
-    margin-bottom:20px;
+
+  .promo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #FEF3C7;
+    color: #B45309;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 5px 12px;
+    border-radius: 30px;
+    margin-bottom: 14px;
+    letter-spacing: 0.2px;
+    border: 1px solid rgba(180, 83, 9, 0.1);
   }
-  .empty-btn {
-    background:#2563EB;
-    color:#fff;
-    font-weight:700;
-    font-size:14px;
-    padding:12px 20px;
-    border-radius:10px;
-    border:none;
-    cursor:pointer;
+
+  /* ---- TITRE + BOUTON PARTAGE ALIGNÉS ---- */
+  .modal-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+
+  .modal-title {
+    font-size: 26px;
+    font-weight: 800;
+    color: #0F172A;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+    flex: 1;
+  }
+
+  /* Bouton partage discret à côté du titre */
+  .btn-share-inline {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: #F1F5F9;
+    border: 1px solid #E2E8F0;
+    color: #475569;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 2px;
+  }
+  .btn-share-inline:hover {
+    background: #E2E8F0;
+    color: #1E3A5F;
+    border-color: #CBD5E1;
+    transform: translateY(-1px);
+  }
+  .btn-share-inline:active {
+    transform: translateY(0);
+  }
+
+  .modal-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .modal-price-old {
+    font-size: 16px;
+    color: #94A3B8;
+    text-decoration: line-through;
+    font-weight: 500;
+  }
+  .modal-price-new {
+    font-size: 28px;
+    font-weight: 800;
+    color: #1E3A5F;
+    letter-spacing: -0.5px;
+  }
+
+  .modal-section-label {
+    font-size: 12px;
+    font-weight: 800;
+    color: #64748B;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin-top: 18px;
+    margin-bottom: 10px;
+  }
+
+  .modal-text {
+    font-size: 15px;
+    line-height: 24px;
+    color: #334155;
+    font-weight: 400;
+  }
+
+  .stock-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #ECFDF5;
+    border: 1px solid #A7F3D0;
+    padding: 10px 16px;
+    border-radius: 40px;
+    margin-top: 22px;
+  }
+  .stock-badge span:first-child {
+    color: #10B981;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .stock-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: #065F46;
+  }
+
+  /* -------------------- Footer A (un seul CTA) -------------------- */
+  .modal-footer-a {
+    padding: 18px 24px 28px;
+    border-top: 1px solid #F1F5F9;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .btn-primary-a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #1E3A5F;
+    color: white;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 18px;
+    border-radius: 18px;
+    border: none;
+    width: 100%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 8px 18px -6px rgba(30, 58, 95, 0.45);
+    letter-spacing: 0.2px;
+  }
+  .btn-primary-a:hover {
+    background: #15304f;
+    transform: translateY(-2px);
+    box-shadow: 0 12px 22px -8px rgba(30, 58, 95, 0.55);
+  }
+  .btn-primary-a:active {
+    transform: translateY(0);
+    box-shadow: 0 4px 10px -4px rgba(30, 58, 95, 0.5);
+  }
+
+  /* ajustement petits écrans */
+  @media (max-width: 430px) {
+    .phone {
+      width: 100%;
+      height: auto;
+      min-height: 780px;
+      border-radius: 32px;
+    }
+    .modal-image-wrap { height: 200px; }
+    .modal-title { font-size: 24px; }
   }
 </style>
 </head>
 <body>
 
 <!-- ============================================ -->
-<!-- ÉTAT 1 : "AUTOUR DE MOI" INACTIF             -->
+<!-- 🅰️  OPTION A — UN SEUL CTA + PARTAGE INLINE   -->
 <!-- ============================================ -->
 <div class="phone">
-  <div class="phone-label">Inactif</div>
-  <div class="scroll">
-    <div class="top-mock">
-      <div class="search-mock">
-        <span>🔍 Rechercher...</span>
-        <span>⚙️</span>
+  <div class="phone-label">🅰️ Option A — design épuré</div>
+  <div class="bg-mock"></div>
+
+  <div class="modal">
+    <div class="modal-image-wrap">
+      <div class="modal-image-placeholder">📷</div>
+      <div class="close-btn">✕</div>
+    </div>
+
+    <div class="modal-body">
+      <div class="promo-badge">🏷️ -25%</div>
+
+      <!-- Titre + partage sur la même ligne -->
+      <div class="modal-title-row">
+        <h1 class="modal-title">Talon carré</h1>
+        <button class="btn-share-inline" aria-label="Partager ce produit" title="Partager">
+          📤
+        </button>
+      </div>
+
+      <div class="modal-price-row">
+        <span class="modal-price-old">20 000 Ar</span>
+        <span class="modal-price-new">15 000 Ar</span>
+      </div>
+
+      <div class="modal-section-label">Description</div>
+      <div class="modal-text">
+        Chaussures tendance pour femme, confortables et élégantes.
+        Disponible en plusieurs tailles.
+      </div>
+
+      <div class="stock-badge">
+        <span>✓</span>
+        <span class="stock-text">8 disponibles</span>
       </div>
     </div>
 
-    <div class="cats-bar">
-      <div class="cat active">Tous</div>
-      <div class="nearby-btn">📍 Autour de moi</div>
-      <div class="cat">🏷️ En promo</div>
-      <div class="cat">Resto</div>
-      <div class="cat">Hôtel</div>
-    </div>
-
-    <div class="section-label">
-      <span class="section-label-text">Toutes les entreprises</span>
-      <span class="section-label-count">4</span>
-    </div>
-
-    <div class="card">
-      <div class="card-img">🏨</div>
-      <div class="card-info">
-        <div class="card-name">Hôtel Lakroa</div>
-        <div class="card-meta">Hôtel · Antananarivo</div>
-      </div>
-      <span class="card-arrow">›</span>
-    </div>
-
-    <div class="card">
-      <div class="card-img">🍽️</div>
-      <div class="card-info">
-        <div class="card-name">Restaurant Chez Soa</div>
-        <div class="card-meta">Restaurant · Antananarivo</div>
-      </div>
-      <span class="card-arrow">›</span>
-    </div>
-
-    <div class="card">
-      <div class="card-img">👗</div>
-      <div class="card-info">
-        <div class="card-name">Boutique Mode</div>
-        <div class="card-meta">Vente · Antananarivo</div>
-      </div>
-      <span class="card-arrow">›</span>
-    </div>
-  </div>
-</div>
-
-<!-- ============================================ -->
-<!-- ÉTAT 2 : "AUTOUR DE MOI" ACTIF               -->
-<!-- ============================================ -->
-<div class="phone">
-  <div class="phone-label">Actif</div>
-  <div class="scroll">
-    <div class="top-mock">
-      <div class="search-mock">
-        <span>🔍 Rechercher...</span>
-        <span>⚙️</span>
-      </div>
-    </div>
-
-    <div class="cats-bar">
-      <div class="cat">Tous</div>
-      <div class="nearby-btn active">✓ Autour de moi</div>
-      <div class="cat">🏷️ En promo</div>
-      <div class="cat">Resto</div>
-      <div class="cat">Hôtel</div>
-    </div>
-
-    <!-- Bandeau filtres actifs -->
-    <div class="active-filters-bar">
-      <span class="active-label">Filtres :</span>
-      <div class="active-chip">
-        📍 Autour de moi
-        <span class="close">✕</span>
-      </div>
-    </div>
-
-    <div class="section-label">
-      <span class="section-label-text">Toutes les entreprises</span>
-      <span class="section-label-count">3</span>
-    </div>
-
-    <!-- Carte 1 : TRÈS PROCHE -->
-    <div class="card">
-      <div class="card-img">🍽️</div>
-      <div class="card-info">
-        <div class="card-name">Restaurant Chez Soa</div>
-        <div class="card-meta">Restaurant · Antananarivo</div>
-      </div>
-      <div class="distance-badge">📍 à 450 m</div>
-      <span class="card-arrow">›</span>
-    </div>
-
-    <!-- Carte 2 : PROCHE -->
-    <div class="card">
-      <div class="card-img">👗</div>
-      <div class="card-info">
-        <div class="card-name">Boutique Mode</div>
-        <div class="card-meta">Vente · Antananarivo</div>
-      </div>
-      <div class="distance-badge">📍 à 1.8 km</div>
-      <span class="card-arrow">›</span>
-    </div>
-
-    <!-- Carte 3 : PLUS LOIN -->
-    <div class="card">
-      <div class="card-img">🏨</div>
-      <div class="card-info">
-        <div class="card-name">Hôtel Lakroa</div>
-        <div class="card-meta">Hôtel · Antananarivo</div>
-      </div>
-      <div class="distance-badge far">📍 à 12 km</div>
-      <span class="card-arrow">›</span>
-    </div>
-  </div>
-</div>
-
-<!-- ============================================ -->
-<!-- ÉTAT 3 : PERMISSION REFUSÉE                  -->
-<!-- ============================================ -->
-<div class="phone">
-  <div class="phone-label">Permission refusée</div>
-  <div class="scroll">
-    <div class="top-mock">
-      <div class="search-mock">
-        <span>🔍 Rechercher...</span>
-        <span>⚙️</span>
-      </div>
-    </div>
-
-    <div class="cats-bar">
-      <div class="cat">Tous</div>
-      <div class="nearby-btn">📍 Autour de moi</div>
-      <div class="cat">🏷️ En promo</div>
-      <div class="cat">Resto</div>
-    </div>
-
-    <div class="empty-state">
-      <div class="empty-icon">📍</div>
-      <div class="empty-title">Position non autorisée</div>
-      <div class="empty-text">
-        Autorisez l'accès à votre position pour trouver les entreprises proches de vous.
-      </div>
-      <button class="empty-btn">Autoriser la localisation</button>
+    <!-- Un seul CTA en bas -->
+    <div class="modal-footer-a">
+      <button class="btn-primary-a">
+        <span>🛒</span> Ajouter au panier
+      </button>
     </div>
   </div>
 </div>

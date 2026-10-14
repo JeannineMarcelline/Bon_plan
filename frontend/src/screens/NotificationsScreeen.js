@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import NetInfo from '@react-native-community/netinfo';
+import { setCache, getCache } from '../database/Offlinecache';
 
 export default function NotificationsScreen({ navigation }) {
   const { user } = useAuth();
@@ -25,7 +27,15 @@ export default function NotificationsScreen({ navigation }) {
   const loadNotifications = async () => {
     if (!user) return;
 
-    try {
+       try {
+      const netState = await NetInfo.fetch();
+
+      if (!netState.isConnected) {
+        const cached = await getCache('notifications');
+        if (cached) setNotifications(cached);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
@@ -35,8 +45,11 @@ export default function NotificationsScreen({ navigation }) {
       if (error) throw error;
 
       setNotifications(data || []);
+      await setCache('notifications', data || []);
     } catch (error) {
       console.error('Erreur chargement notifications:', error);
+      const cached = await getCache('notifications');
+      if (cached) setNotifications(cached);
     } finally {
       setLoading(false);
     }

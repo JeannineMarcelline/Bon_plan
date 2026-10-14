@@ -20,10 +20,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import NetInfo from '@react-native-community/netinfo';
+import { setCache, getCache } from '../database/Offlinecache';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { getConfigCategorie } from '../Config/categorieConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import {
+  partagerNatif,
+  messageEntreprise,
+  messageProduit,
+} from '../lib/shareHelper';
 
 // ============================================================
 // HELPERS & SOUS-COMPOSANTS MÉMOÏSÉS
@@ -42,6 +49,35 @@ function renderStars(n, size = 16) {
     );
   }
   return stars;
+}
+
+// NOUVEAU : distance en km entre deux points GPS
+function distanceKm(a, b) {
+  const R = 6371;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.latitude * Math.PI) / 180) *
+      Math.cos((b.latitude * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+// NOUVEAU : position fiable d'une entreprise (même règle que HomeScreen).
+// GPS absent ou à plus de 30 km du centre de sa ville -> centre-ville.
+function positionEntreprise(e) {
+  const gps =
+    e?.latitude && e?.longitude
+      ? { latitude: Number(e.latitude), longitude: Number(e.longitude) }
+      : null;
+  const centre =
+    e?.ville_latitude && e?.ville_longitude
+      ? { latitude: Number(e.ville_latitude), longitude: Number(e.ville_longitude) }
+      : null;
+  if (!centre) return gps;
+  if (!gps || distanceKm(centre, gps) > 30) return centre;
+  return gps;
 }
 
 const CompanyMapPreview = memo(function CompanyMapPreview({
@@ -185,7 +221,9 @@ const ProductRow = memo(function ProductRow({
   );
 });
 
-const AvisItem = memo(function AvisItem({ avis }) {
+const AvisItem = memo(function AvisItem({ avis, onSignaler, user }) {
+  const estMonAvis = user && avis.id_utilisateur === user.id;
+
   return (
     <View style={styles.avisItem}>
       <View style={styles.avisHeader}>
@@ -197,7 +235,19 @@ const AvisItem = memo(function AvisItem({ avis }) {
           </View>
           <Text style={styles.avisNom}>{avis.nom_utilisateur}</Text>
         </View>
-        <View style={styles.avisStars}>{renderStars(avis.note, 12)}</View>
+        <View style={styles.avisRight}>
+          <View style={styles.avisStars}>{renderStars(avis.note, 12)}</View>
+          {/* ⭐ Bouton Signaler (caché si c'est notre propre avis) */}
+          {!estMonAvis && (
+            <TouchableOpacity
+              style={styles.avisSignalerBtn}
+              onPress={() => onSignaler(avis)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="flag-outline" size={14} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
       <Text style={styles.avisCommentaire}>{avis.commentaire}</Text>
       <Text style={styles.avisDate}>
@@ -262,6 +312,13 @@ export default function CompanyScreen() {
   const [estFavori, setEstFavori] = useState(false);
   const [loadingFavori, setLoadingFavori] = useState(false);
 
+  // ⭐ Signalements
+const [modalSignalementVisible, setModalSignalementVisible] = useState(false);
+const [signalementCible, setSignalementCible] = useState(null);
+const [raisonSignalement, setRaisonSignalement] = useState(null);
+const [commentaireSignalement, setCommentaireSignalement] = useState('');
+const [submittingSignalement, setSubmittingSignalement] = useState(false);
+
 
   const [trajets, setTrajets] = useState([]);
   const [vehicules, setVehicules] = useState([]);
@@ -294,13 +351,22 @@ export default function CompanyScreen() {
   );
   const mots = config.vocabulaire;
   const besoinDuree = config.besoinDuree;
-  const estTransport =
-    entreprise?.categorie?.trim().toLowerCase() === 'transport';
+  const estTransport = entreprise?.categorie?.trim().toLowerCase() === 'transport';
 
 
   const loadProduits = useCallback(async (entrepriseId, debut = null, fin = null) => {
     try {
       setLoadingProduits(true);
+
+      const netState = await NetInfo.fetch();
+      const cacheKey = `produits_${entrepriseId}`;
+
+      // Hors ligne OU recherche par dates → cache uniquement si pas de dates
+      if (!netState.isConnected && !debut && !fin) {
+        const cached = await getCache(cacheKey);
+        if (cached) setProduits(cached);
+        return;
+      }
 
       const { data, error } = await supabase.rpc(
         'produits_disponibles_pour_dates',
@@ -313,8 +379,18 @@ export default function CompanyScreen() {
 
       if (error) throw error;
       setProduits(data || []);
+
+      // Cache uniquement si pas de recherche par dates
+      if (!debut && !fin) {
+        await setCache(cacheKey, data || []);
+      }
     } catch (error) {
       console.error('Erreur chargement produits:', error);
+      // Fallback cache
+      if (!debut && !fin) {
+        const cached = await getCache(`produits_${entrepriseId}`);
+        if (cached) setProduits(cached);
+      }
     } finally {
       setLoadingProduits(false);
     }
@@ -376,11 +452,11 @@ export default function CompanyScreen() {
         console.log('Villes départ:', Array.from(setDepart));
         console.log('Villes arrivée:', Array.from(setArrivee));
         console.log('Trajets:', trajetsFuturs.map(t => ({
-  id: t.id_trajet,
-  de: t.ville_depart,
-  vers: t.ville_arrivee,
-  date: t.date_depart,
-})));
+        id: t.id_trajet,
+        de: t.ville_depart,
+        vers: t.ville_arrivee,
+        date: t.date_depart,
+      })));
         setVillesArrivee(Array.from(setArrivee).sort());
       } else {
         setTrajets([]);
@@ -394,8 +470,26 @@ export default function CompanyScreen() {
     }
   }, []);
 
-  const loadAvis = useCallback(async (entrepriseId) => {
+
+   const loadAvis = useCallback(async (entrepriseId) => {
     try {
+      const netState = await NetInfo.fetch();
+      const cacheKey = `avis_${entrepriseId}`;
+
+      // Hors ligne → cache
+      if (!netState.isConnected) {
+        const cached = await getCache(cacheKey);
+        if (cached) {
+          setAvisList(cached);
+          setNbAvis(cached.length);
+          if (cached.length > 0) {
+            const total = cached.reduce((sum, a) => sum + a.note, 0);
+            setNoteMoyenne(total / cached.length);
+          }
+        }
+        return;
+      }
+
       const { data, error } = await supabase
         .from('avis')
         .select('*, utilisateurs (nom)')
@@ -418,10 +512,18 @@ export default function CompanyScreen() {
       } else {
         setNoteMoyenne(0);
       }
+
+      await setCache(cacheKey, result);
     } catch (error) {
       console.error('Erreur chargement avis:', error);
+      // Fallback cache
+      const cached = await getCache(`avis_${entrepriseId}`);
+      if (cached) {
+        setAvisList(cached);
+        setNbAvis(cached.length);
+      }
     }
-  }, []);
+  }, []); 
 
   const submitAvis = useCallback(async () => {
     if (!user) {
@@ -456,22 +558,21 @@ export default function CompanyScreen() {
   }, [user, note, commentaire, entreprise, loadAvis]);
 
   const shareWhatsApp = useCallback(() => {
-    const message = `🏢 *${entreprise.nom}*\nAdresse : ${entreprise.adresse}\nTéléphone : ${entreprise.telephone}\nNote : ${noteMoyenne.toFixed(1)}/5\n\n`;
-    const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Erreur', "WhatsApp n'est pas installé");
-    });
+    const message = messageEntreprise(entreprise, noteMoyenne);
+    partagerNatif(message, `Partager ${entreprise.nom}`);
   }, [entreprise, noteMoyenne]);
 
-  const openItineraire = useCallback(() => {
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${
-      userLocation?.latitude || ''
-    },${userLocation?.longitude || ''}&destination=${
-      entreprise.latitude || -21.4526
-    },${entreprise.longitude || 47.0855}`;
-    Linking.openURL(url);
+    const openItineraire = useCallback(() => {
+    const pos = positionEntreprise(entreprise);
+    if(!pos) return;
+    const destination = pos
+      ? `${pos.latitude},${pos.longitude}`
+      : encodeURIComponent(`${entreprise.adresse || ''}, ${entreprise.ville || ''}, Madagascar`);
+    const origin = userLocation
+      ? `&origin=${userLocation.latitude},${userLocation.longitude}`
+      : '';
+    Linking.openURL(`https://www.google.com/maps/dir/?api=1${origin}&destination=${destination}`);
   }, [userLocation, entreprise]);
-
   const onChangeDateDebut = useCallback((event, selectedDate) => {
     if (Platform.OS === 'android') setShowPickerDebut(false);
     if (event.type === 'dismissed') return;
@@ -620,21 +721,40 @@ export default function CompanyScreen() {
   useEffect(() => {
     const loadCompany = async () => {
       try {
+        const netState = await NetInfo.fetch();
+        const cacheKey = `entreprise_${id}`;
+
+        // Hors ligne → cache
+        if (!netState.isConnected) {
+          const cached = await getCache(cacheKey);
+          if (cached) {
+            setEntreprise(cached);
+            await Promise.all([
+              loadAvis(cached.id),
+              loadProduits(cached.id),
+            ]);
+          }
+          setLoading(false);
+          return;
+        }
+
         const { data, error } = await supabase
           .from('entreprises')
-          .select('*, villes(nom), categories(nom)')
+          .select('*, villes(nom, latitude, longitude), categories(nom)')
           .eq('id', id)
           .maybeSingle();
 
         if (error) throw error;
-
         if (data) {
           const e = {
             ...data,
             ville: data.villes?.nom || '',
+            ville_latitude: data.villes?.latitude,
+            ville_longitude: data.villes?.longitude,
             categorie: data.categories?.nom || '',
           };
-                   setEntreprise(e);
+           setEntreprise(e);
+          await setCache(`entreprise_${id}`, e);
 
           const estTransportCat =
             e.categorie?.trim().toLowerCase() === 'transport';
@@ -645,7 +765,7 @@ export default function CompanyScreen() {
             estTransportCat ? loadTransport(e.id) : Promise.resolve(),
           ]);
 
-          // ⭐ Vérifier si en favori
+          
           if (user) {
             const { data: fav } = await supabase
               .from('favoris')
@@ -658,6 +778,14 @@ export default function CompanyScreen() {
         }
       } catch (error) {
         console.error('Erreur chargement entreprise:', error);
+         const cached = await getCache(`entreprise_${id}`);
+        if (cached) {
+          setEntreprise(cached);
+          await Promise.all([
+            loadAvis(cached.id),
+            loadProduits(cached.id),
+          ]);
+        }
       } finally {
         setLoading(false);
       }
@@ -755,6 +883,70 @@ export default function CompanyScreen() {
   }, [user, id, estFavori]);
 
 
+  // ⭐ ============================================================
+  // SIGNALEMENTS
+  // ============================================================
+  const RAISONS_SIGNALEMENT = [
+    { key: 'contenu_abusif', label: 'Contenu abusif / insultant' },
+    { key: 'info_fausse', label: 'Information fausse' },
+    { key: 'photo_non_conforme', label: 'Photo non conforme' },
+    { key: 'arnaque', label: 'Arnaque / fraude' },
+    { key: 'autre', label: 'Autre' },
+  ];
+
+  const ouvrirModalSignalement = useCallback((type, cible) => {
+    if (!user) {
+      Alert.alert(
+        'Connexion requise',
+        'Connectez-vous pour signaler un contenu.'
+      );
+      return;
+    }
+    setSignalementCible({ type, ...cible });
+    setRaisonSignalement(null);
+    setCommentaireSignalement('');
+    setModalSignalementVisible(true);
+  }, [user]);
+
+  const fermerModalSignalement = useCallback(() => {
+    setModalSignalementVisible(false);
+    setSignalementCible(null);
+    setRaisonSignalement(null);
+    setCommentaireSignalement('');
+  }, []);
+
+  const envoyerSignalement = useCallback(async () => {
+    if (!raisonSignalement) {
+      Alert.alert('Erreur', 'Veuillez choisir une raison.');
+      return;
+    }
+
+    setSubmittingSignalement(true);
+    try {
+      const { error } = await supabase.from('signalements').insert({
+        id_utilisateur: user.id,
+        type: signalementCible.type,
+        id_cible: String(signalementCible.id),
+        raison: raisonSignalement,
+        commentaire: commentaireSignalement.trim() || null,
+      });
+
+      if (error) throw error;
+
+      fermerModalSignalement();
+      Alert.alert(
+        'Signalement envoyé',
+        'Merci, votre signalement a été transmis à un administrateur.'
+      );
+    } catch (error) {
+      console.error('Erreur signalement:', error);
+      Alert.alert('Erreur', "Impossible d'envoyer votre signalement.");
+    } finally {
+      setSubmittingSignalement(false);
+    }
+  }, [user, raisonSignalement, commentaireSignalement, signalementCible, fermerModalSignalement]);
+
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -783,9 +975,10 @@ export default function CompanyScreen() {
         maxToRenderPerBatch={6}
         windowSize={7}
         updateCellsBatchingPeriod={50}
+
         ListHeaderComponent={
           <>
-                       <View style={styles.imageContainer}>
+              <View style={styles.imageContainer}>
               <TouchableOpacity
                 style={styles.backButton}
                 onPress={() => navigation.goBack()}
@@ -825,7 +1018,7 @@ export default function CompanyScreen() {
                 <Text style={styles.ratingText}>({nbAvis} avis)</Text>
               </View>
 
-              <View style={styles.actionRow}>
+                            <View style={styles.actionRow}>
                 <TouchableOpacity
                   style={styles.actionBtn}
                   onPress={() => Linking.openURL(`tel:${entreprise.telephone}`)}
@@ -843,6 +1036,22 @@ export default function CompanyScreen() {
                   <Ionicons name="share-social-outline" size={20} color="#10B981" />
                   <Text style={[styles.actionBtnText, { color: '#10B981' }]}>
                     Partager
+                  </Text>
+                </TouchableOpacity>
+
+                {/* ⭐ Bouton Signaler */}
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() =>
+                    ouvrirModalSignalement('entreprise', {
+                      id: entreprise.id,
+                      resume: `Entreprise : ${entreprise.nom}`,
+                    })
+                  }
+                >
+                  <Ionicons name="flag-outline" size={20} color="#DC2626" />
+                  <Text style={[styles.actionBtnText, { color: '#DC2626' }]}>
+                    Signaler
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -932,9 +1141,9 @@ export default function CompanyScreen() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Localisation</Text>
 
-                <CompanyMapPreview
-                  latitude={entreprise.latitude}
-                  longitude={entreprise.longitude}
+                 <CompanyMapPreview
+                  latitude={positionEntreprise(entreprise)?.latitude}     // MODIFIÉ
+                  longitude={positionEntreprise(entreprise)?.longitude}   // MODIFIÉ
                   onPress={openItineraire}
                 />
 
@@ -1244,7 +1453,7 @@ export default function CompanyScreen() {
             )}
 
             {/* ----- Section produits (non transport) ----- */}
-            {!estTransport && (
+                       {!estTransport && besoinDuree && (
               <View style={styles.section}>
                 <View style={styles.card}>
                   <View style={styles.produitsHeader}>
@@ -1257,107 +1466,105 @@ export default function CompanyScreen() {
                     </Text>
                   </View>
 
-                  {besoinDuree && (
-                    <View style={styles.dateSelectorBox}>
-                      <Text style={styles.dateSelectorTitle}>
-                        Quand voulez-vous venir ?
-                      </Text>
+                  <View style={styles.dateSelectorBox}>
+                    <Text style={styles.dateSelectorTitle}>
+                      Quand voulez-vous venir ?
+                    </Text>
 
-                      <View style={styles.dateSelectorRow}>
-                        <TouchableOpacity
-                          style={styles.dateBtn}
-                          onPress={() => setShowPickerDebut(true)}
-                        >
-                          <Ionicons
-                            name="calendar-outline"
-                            size={16}
-                            color="#6B7280"
-                          />
-                          <Text
-                            style={[
-                              styles.dateBtnText,
-                              !dateDebut && styles.dateBtnPlaceholder,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {dateDebut ? formatDateFr(dateDebut) : 'Arrivée'}
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.dateBtn}
-                          onPress={() => {
-                            if (!dateDebut) {
-                              Alert.alert(
-                                "Choisissez d'abord la date d'arrivée",
-                                'Sélectionnez la date de début avant la date de fin.'
-                              );
-                              return;
-                            }
-                            setShowPickerFin(true);
-                          }}
-                        >
-                          <Ionicons
-                            name="calendar-outline"
-                            size={16}
-                            color="#6B7280"
-                          />
-                          <Text
-                            style={[
-                              styles.dateBtnText,
-                              !dateFin && styles.dateBtnPlaceholder,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {dateFin ? formatDateFr(dateFin) : 'Départ'}
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.searchBtn}
-                          onPress={handleRechercher}
-                        >
-                          <Ionicons name="search" size={18} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-
-                      {rechercheFaite && (
-                        <TouchableOpacity
-                          style={styles.clearSearchBtn}
-                          onPress={effacerRecherche}
-                        >
-                          <Ionicons
-                            name="close-circle-outline"
-                            size={14}
-                            color="#6B7280"
-                          />
-                          <Text style={styles.clearSearchText}>
-                            Effacer les dates et voir tout
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {showPickerDebut && (
-                        <DateTimePicker
-                          value={dateDebut || new Date()}
-                          mode="date"
-                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                          minimumDate={new Date()}
-                          onChange={onChangeDateDebut}
+                    <View style={styles.dateSelectorRow}>
+                      <TouchableOpacity
+                        style={styles.dateBtn}
+                        onPress={() => setShowPickerDebut(true)}
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={16}
+                          color="#6B7280"
                         />
-                      )}
+                        <Text
+                          style={[
+                            styles.dateBtnText,
+                            !dateDebut && styles.dateBtnPlaceholder,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {dateDebut ? formatDateFr(dateDebut) : 'Arrivée'}
+                        </Text>
+                      </TouchableOpacity>
 
-                      {showPickerFin && (
-                        <DateTimePicker
-                          value={dateFin || dateDebut || new Date()}
-                          mode="date"
-                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                          minimumDate={dateDebut || new Date()}
-                          onChange={onChangeDateFin}
+                      <TouchableOpacity
+                        style={styles.dateBtn}
+                        onPress={() => {
+                          if (!dateDebut) {
+                            Alert.alert(
+                              "Choisissez d'abord la date d'arrivée",
+                              'Sélectionnez la date de début avant la date de fin.'
+                            );
+                            return;
+                          }
+                          setShowPickerFin(true);
+                        }}
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={16}
+                          color="#6B7280"
                         />
-                      )}
+                        <Text
+                          style={[
+                            styles.dateBtnText,
+                            !dateFin && styles.dateBtnPlaceholder,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {dateFin ? formatDateFr(dateFin) : 'Départ'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.searchBtn}
+                        onPress={handleRechercher}
+                      >
+                        <Ionicons name="search" size={18} color="#fff" />
+                      </TouchableOpacity>
                     </View>
-                  )}
+
+                    {rechercheFaite && (
+                      <TouchableOpacity
+                        style={styles.clearSearchBtn}
+                        onPress={effacerRecherche}
+                      >
+                        <Ionicons
+                          name="close-circle-outline"
+                          size={14}
+                          color="#6B7280"
+                        />
+                        <Text style={styles.clearSearchText}>
+                          Effacer les dates et voir tout
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {showPickerDebut && (
+                      <DateTimePicker
+                        value={dateDebut || new Date()}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        minimumDate={new Date()}
+                        onChange={onChangeDateDebut}
+                      />
+                    )}
+
+                    {showPickerFin && (
+                      <DateTimePicker
+                        value={dateFin || dateDebut || new Date()}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        minimumDate={dateDebut || new Date()}
+                        onChange={onChangeDateFin}
+                      />
+                    )}
+                  </View>
                 </View>
               </View>
             )}
@@ -1420,9 +1627,19 @@ export default function CompanyScreen() {
                 {avisList.length === 0 ? (
                   <Text style={styles.emptyText}>Aucun avis pour le moment</Text>
                 ) : (
-                  avisList.map((avis) => (
-                    <AvisItem key={avis.id_avis} avis={avis} />
-                  ))
+                                   avisList.map((avis) => (
+                    <AvisItem
+                      key={avis.id_avis}
+                      avis={avis}
+                      user={user}
+                      onSignaler={(a) =>
+                        ouvrirModalSignalement('avis', {
+                          id: a.id_avis,
+                          resume: `Avis de ${a.nom_utilisateur} : "${a.commentaire.slice(0, 60)}..."`,
+                        })
+                      }
+                    />
+                  )) 
                 )}
               </View>
             </View>
@@ -1459,14 +1676,50 @@ export default function CompanyScreen() {
                   </View>
                 )}
 
-                <ScrollView style={styles.modalBody}>
+                        <ScrollView style={styles.modalBody}>
+                  {/* ⭐ Badge promo */}
+                  {estEnPromoActive(produitSelectionne) && (
+                    <View style={styles.modalPromoBadge}>
+                      <Ionicons name="pricetag" size={10} color="#B45309" />
+                      <Text style={styles.modalPromoBadgeText}>
+                        -
+                        {calcReduction(
+                          produitSelectionne.prix_produit,
+                          produitSelectionne.prix_promo
+                        )}
+                        %
+                      </Text>
+                    </View>
+                  )}
+
                   <Text style={styles.modalName}>
                     {produitSelectionne.nom_produit}
                   </Text>
-                  <Text style={styles.modalPrice}>
-                    {Number(produitSelectionne.prix_produit).toLocaleString('fr-FR')}{' '}
-                    Ar
-                  </Text>
+
+                  {/* ⭐ Prix : barré + promo si en promo */}
+                  {estEnPromoActive(produitSelectionne) ? (
+                    <View style={styles.modalPriceRow}>
+                      <Text style={styles.modalPriceOld}>
+                        {Number(
+                          produitSelectionne.prix_produit
+                        ).toLocaleString('fr-FR')}{' '}
+                        Ar
+                      </Text>
+                      <Text style={styles.modalPriceNew}>
+                        {Number(
+                          produitSelectionne.prix_promo
+                        ).toLocaleString('fr-FR')}{' '}
+                        Ar
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.modalPrice}>
+                      {Number(produitSelectionne.prix_produit).toLocaleString(
+                        'fr-FR'
+                      )}{' '}
+                      Ar
+                    </Text>
+                  )}
 
                   <Text style={styles.modalSectionTitle}>DESCRIPTION</Text>
                   <Text style={styles.modalText}>
@@ -1474,25 +1727,47 @@ export default function CompanyScreen() {
                       'Aucune description fournie.'}
                   </Text>
 
-                  <View style={styles.modalStock}>
-                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                    <Text style={styles.modalStockText}>
+                     <View style={styles.modalStockRow}>
+                    <Text style={styles.modalStockLabel}>Stock</Text>
+                    <Text style={styles.modalStockValue}>
                       {produitSelectionne.stock} disponible
                       {produitSelectionne.stock > 1 ? 's' : ''}
                     </Text>
                   </View>
                 </ScrollView>
+                            <View style={styles.modalFooter}>
+                  <View style={styles.modalFooterRow}>
+                    <TouchableOpacity
+                      style={styles.modalShareBtn}
+                      onPress={() =>
+                        partagerNatif(
+                          messageProduit(produitSelectionne, entreprise),
+                          'Partager ce produit'
+                        )
+                      }
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="share-social-outline" size={18} color="#374151" />
+                    </TouchableOpacity>
 
-                <View style={styles.modalFooter}>
-                  <TouchableOpacity
-                    style={styles.modalActionBtn}
-                    onPress={() => handleActionProduit(produitSelectionne)}
-                  >
-                    <Text style={styles.modalActionBtnText}>
-                      {besoinDuree ? '+ Réserver' : '+ Ajouter au panier'}
-                    </Text>
-                  </TouchableOpacity>
+                    {/* ⭐ Bouton principal compact */}
+                    <TouchableOpacity
+                      style={styles.modalPrimaryBtn}
+                      onPress={() => handleActionProduit(produitSelectionne)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons
+                        name={besoinDuree ? 'calendar-outline' : 'cart-outline'}
+                        size={16}
+                        color="#fff"
+                      />
+                      <Text style={styles.modalPrimaryBtnText}>
+                        {besoinDuree ? 'Réserver' : 'Ajouter au panier'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
+                
               </>
             )}
           </View>
@@ -1676,7 +1951,102 @@ export default function CompanyScreen() {
               )}
             </ScrollView>
           </View>
-        </TouchableOpacity>
+               </TouchableOpacity>
+      </Modal>
+
+      {/* ⭐ MODALE SIGNALEMENT */}
+      <Modal
+        visible={modalSignalementVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={fermerModalSignalement}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalSheetHeader}>
+              <Text style={styles.modalSheetTitle}>Signaler</Text>
+              <TouchableOpacity
+                style={styles.modalSheetClose}
+                onPress={fermerModalSignalement}
+              >
+                <Ionicons name="close" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Résumé de la cible */}
+              {signalementCible?.resume && (
+                <View style={styles.signalementResume}>
+                  <Ionicons name="document-text-outline" size={14} color="#6B7280" />
+                  <Text style={styles.signalementResumeText} numberOfLines={3}>
+                    {signalementCible.resume}
+                  </Text>
+                </View>
+              )}
+
+              <Text style={styles.fieldLabel}>Pourquoi signalez-vous ce contenu ?</Text>
+
+              {RAISONS_SIGNALEMENT.map((r) => (
+                <TouchableOpacity
+                  key={r.key}
+                  style={styles.raisonItem}
+                  onPress={() => setRaisonSignalement(r.key)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={
+                      raisonSignalement === r.key
+                        ? 'radio-button-on'
+                        : 'radio-button-off'
+                    }
+                    size={20}
+                    color={raisonSignalement === r.key ? '#2563EB' : '#9CA3AF'}
+                  />
+                  <Text
+                    style={[
+                      styles.raisonText,
+                      raisonSignalement === r.key && styles.raisonTextActive,
+                    ]}
+                  >
+                    {r.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              <Text style={[styles.fieldLabel, { marginTop: 20 }]}>
+                Détails (optionnel)
+              </Text>
+              <TextInput
+                style={styles.signalementInput}
+                placeholder="Précisez votre signalement..."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={3}
+                value={commentaireSignalement}
+                onChangeText={setCommentaireSignalement}
+                maxLength={300}
+              />
+
+              <TouchableOpacity
+                style={[
+                  styles.btnSearch,
+                  submittingSignalement && { opacity: 0.6 },
+                ]}
+                onPress={envoyerSignalement}
+                disabled={submittingSignalement}
+              >
+                {submittingSignalement ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="flag" size={18} color="#fff" />
+                    <Text style={styles.btnSearchText}>Envoyer le signalement</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1754,7 +2124,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   actionBtn: { alignItems: 'center', gap: 4 },
-  actionBtnText: { fontSize: 12, color: '#374151', fontWeight: '500' },
+   actionBtnText: { fontSize: 11, color: '#374151', fontWeight: '600' },
 
   // ---------- SECTIONS ----------
   section: { paddingHorizontal: 16, paddingTop: 16 },
@@ -1964,9 +2334,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 5,
   },
-  modalImage: {
+   modalImage: {
     width: '100%',
-    height: 240,
+    height: 180,
     backgroundColor: '#F3F4F6',
   },
   modalBody: { padding: 20, maxHeight: 280 },
@@ -1976,12 +2346,45 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 4,
   },
-  modalPrice: {
+    modalPromoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  modalPromoBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  modalPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    marginBottom: 16,
+  },
+  modalPriceOld: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+  },
+  modalPriceNew: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+    modalPrice: {
     fontSize: 20,
     fontWeight: '800',
     color: '#1E3A5F',
     marginBottom: 16,
   },
+
   modalSectionTitle: {
     fontSize: 11,
     fontWeight: '700',
@@ -1991,36 +2394,71 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   modalText: { fontSize: 14, lineHeight: 22, color: '#374151' },
-  modalStock: {
+   
+  // ⭐ Stock discret
+  modalStockRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 14,
+    justifyContent: 'space-between',
     paddingVertical: 10,
-    borderRadius: 10,
-    marginTop: 16,
-  },
-  modalStockText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#10B981',
-  },
-  modalFooter: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 24,
+    paddingHorizontal: 4,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
+    marginTop: 16,
   },
-  modalActionBtn: {
-    backgroundColor: '#1E3A5F',
-    borderRadius: 14,
-    paddingVertical: 15,
+  modalStockLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  modalStockValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+
+  // ⭐ Footer compact
+   modalFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    backgroundColor: '#fff',
+  },
+   modalFooterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'stretch',
+  },
+
+  modalShareBtn: {
+    width: 42,
+    height: 42,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  modalActionBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
+  modalPrimaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 12,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  modalPrimaryBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   // ---------- LOCALISATION ----------
   locationCard: {
     borderRadius: 12,
@@ -2404,10 +2842,71 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#111827',
   },
-    itinerairePriceSubRow: {
+  itinerairePriceSubRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     marginTop: 2,
   },
+
+  // ⭐ SIGNALEMENTS
+  avisRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  avisSignalerBtn: {
+    padding: 4,
+  },
+  signalementResume: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  signalementResumeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#374151',
+    fontStyle: 'italic',
+  },
+  raisonItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  raisonText: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  raisonTextActive: {
+    color: '#2563EB',
+    fontWeight: '600',
+  },
+  signalementInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#111827',
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+    // ⭐ Partage étendu
+  modalFooterRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+ 
 });

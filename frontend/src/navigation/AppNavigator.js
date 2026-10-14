@@ -25,6 +25,7 @@ import AdminCategorie from '../screens/AdminCategorie';
 import AdminUserScreen from '../screens/AdminUserScreen';
 import ProDashbordScreen from '../screens/ProDashbordScreen';
 import AdminEntrepriseScreen from '../screens/AdminEntrepriseScreen';
+import AdminSignalementScreen from '../screens/AdminSignalementScreen';
 import CompanyVehiculeScreen from '../screens/CompanyVehiculeScreen';
 import PlaceScreen from '../screens/PlaceScreen';
 import MesReservationsScreen from '../screens/MesReservationsScreen';
@@ -92,6 +93,7 @@ function AdminStack() {
       <Stack.Screen name="AdminCategorie" component={AdminCategorie} />
       <Stack.Screen name="AdminUser" component={AdminUserScreen} />
       <Stack.Screen name="AdminEntreprises" component={AdminEntrepriseScreen} />
+      <Stack.Screen name="AdminSignalements" component={AdminSignalementScreen} />
     </Stack.Navigator>
   );
 }
@@ -202,8 +204,7 @@ function MainTabs() {
         />
 
         <Tab.Screen name="Profil" component={ProfileScreen} />
-     
-        <Tab.Screen
+             <Tab.Screen
           name="Panier"
           component={CartScreen}
           options={{
@@ -226,7 +227,19 @@ function MainTabs() {
           }}
         />
 
+        {/* ⭐ AdminStack caché (pas visible dans la tab bar) */}
+        <Tab.Screen
+          name="admin"
+          component={AdminStack}
+          options={{
+            tabBarButton: () => null,
+            tabBarItemStyle: { display: 'none' },
+          }}
+        />
+        
+
       </Tab.Navigator>
+       
     </SafeAreaView>
   );
 }
