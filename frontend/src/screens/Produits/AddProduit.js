@@ -47,6 +47,10 @@ const [dateDebutPromo, setDateDebutPromo] = useState(null);
 const [dateFinPromo, setDateFinPromo] = useState(null);
 const [showPickerDebut, setShowPickerDebut] = useState(false);
 const [showPickerFin, setShowPickerFin] = useState(false);
+const [heureDebutPromo, setHeureDebutPromo] = useState(null);
+const [heureFinPromo, setHeureFinPromo] = useState(null);
+const [showTimePickerDebut, setShowTimePickerDebut] = useState(false);
+const [showTimePickerFin, setShowTimePickerFin] = useState(false);
 
 
 useEffect(() => {
@@ -97,17 +101,32 @@ const chargerProduitExistant = async () => {
       setStock(data.stock?.toString() || '');
       setPhotos_produit(data.photos_produit || []);
 
-      if(data.prix_promo != null) {
-   setEnPromo(true);
-   setPrixPromo(data.prix_promo.toString());
-   setDateDebutPromo(
-  data.date_debut_promo ? new Date(data.date_debut_promo) : null
- );
-setDateFinPromo(
-data.date_fin_promo ? new Date(data.date_fin_promo) : null
-);
- }
+ if(data.prix_promo != null) {
+    setEnPromo(true);
+    setPrixPromo(data.prix_promo.toString());
 
+    setDateDebutPromo(
+       data.date_debut_promo ? new Date(data.date_debut_promo) : null
+          );
+
+    setDateFinPromo(
+      data.date_fin_promo ? new Date(data.date_fin_promo) : null
+         );
+
+     if(data.heure_debut_promo){
+        const [h, m] = data.heure_debut_promo.split(':');
+        const d = new Date();
+        d.setHours(parseInt(h), parseInt(m), 0, 0);
+        setHeureDebutPromo(d);
+     }
+
+     if(data.heure_fin_promo){
+        const [h, m] = data.heure_fin_promo.split(':');
+        const d = new Date();
+        d.setHours(parseInt(h), parseInt(m), 0, 0);
+        setHeureFinPromo(d);
+     }
+ }
 }
   } catch (error) {
     console.error('Erreur chargement produit:', error);
@@ -185,7 +204,8 @@ if(!nom_produit || !prix_produit || !stock) {
 
 if(enPromo) {
 
- if(!prixPromo || !dateDebutPromo || !dateFinPromo) {
+ if(!prixPromo || !dateDebutPromo || !dateFinPromo || !heureDebutPromo || !heureFinPromo) {
+  
   Alert.alert(
     'Promo incomplète',
     'Renseignez le prix promo, la date de début et la date de fin.'
@@ -199,16 +219,36 @@ if(enPromo) {
     'Le prix promo doit être inférieur au prix normal.'
   );
   return;
-
  }
 
- if(dateFinPromo <= dateDebutPromo) {
-  Alert.alert(
-    'Date incohérentes',
-    'La date de fin doit être après la date de début'
-  );
-  return;
+ const debutComplet = new Date(dateDebutPromo);
+ debutComplet.setHours(heureDebutPromo.getHours(), heureDebutPromo.getMinutes(), 0, 0);
+ 
+ const finComplet = new Date(dateFinPromo);
+  finComplet.setHours(heureFinPromo.getHours(), heureFinPromo.getMinutes(), 0, 0);
+
+  if(finComplet <= debutComplet ){
+      Alert.alert('Dates incohérentes', `La fin (${finComplet.toLocaleString('fr-FR')}) doit être après le début (${debutComplet.toLocaleString('fr-FR')}).`);
+     return;
+  }
+
+const dureeH = (finComplet - debutComplet) / (1000 * 60 * 60);
+ if (dureeH < 1) {
+   Alert.alert(
+     'Durée trop courte',
+     'La promotion doit durer au moins 1 heure.'
+   );
+   return;
  }
+
+  if (debutComplet < new Date()) {
+   Alert.alert(
+     'Date invalide',
+     'La promotion ne peut pas commencer dans le passé.'
+   );
+   return;
+ }
+
 }
 
 try{
@@ -232,6 +272,27 @@ if(url) photoUrls.push(url);
 }
 }
 
+// ⭐ Construire les dates complètes (date + heure combinées)
+let dateDebutComplete = null;
+let dateFinComplete = null;
+
+if (enPromo) {
+  dateDebutComplete = new Date(dateDebutPromo);
+  dateDebutComplete.setHours(
+    heureDebutPromo.getHours(),
+    heureDebutPromo.getMinutes(),
+    0,
+    0
+  );
+
+  dateFinComplete = new Date(dateFinPromo);
+  dateFinComplete.setHours(
+    heureFinPromo.getHours(),
+    heureFinPromo.getMinutes(),
+    0,
+    0
+  );
+}
 
 const donneesProduit = {
   nom_produit,
@@ -241,9 +302,14 @@ const donneesProduit = {
   photos_produit: photoUrls.length > 0 ? photoUrls : photos_produit, 
 
   prix_promo: enPromo ? parseFloat(prixPromo) : null,
-  date_debut_promo: enPromo ? dateDebutPromo.toISOString() : null,
-  date_fin_promo: enPromo ? dateFinPromo.toISOString() : null,
-  
+  date_debut_promo: enPromo ? dateDebutComplete.toISOString() : null,
+  date_fin_promo: enPromo ? dateFinComplete.toISOString() : null,
+  heure_debut_promo: enPromo
+    ? `${String(heureDebutPromo.getHours()).padStart(2, '0')}:${String(heureDebutPromo.getMinutes()).padStart(2, '0')}:00`
+    : null,
+  heure_fin_promo: enPromo
+    ? `${String(heureFinPromo.getHours()).padStart(2, '0')}:${String(heureFinPromo.getMinutes()).padStart(2, '0')}:00`
+    : null,
 };
 
 if (estModification) {
@@ -388,9 +454,10 @@ const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
                     )}
                   </View>
 
+                  {/* ⭐ Date + Heure de début */}
                   <View style={styles.row}>
                     <View style={[styles.inputGroup, styles.halfWidth]}>
-                      <Text style={styles.label}>Du *</Text>
+                      <Text style={styles.label}>Date début *</Text>
                       <TouchableOpacity
                         style={styles.dateBtn}
                         onPress={() => setShowPickerDebut(true)}
@@ -410,7 +477,30 @@ const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
                     </View>
 
                     <View style={[styles.inputGroup, styles.halfWidth]}>
-                      <Text style={styles.label}>Au *</Text>
+                      <Text style={styles.label}>Heure début *</Text>
+                      <TouchableOpacity
+                        style={styles.dateBtn}
+                        onPress={() => setShowTimePickerDebut(true)}
+                      >
+                        <Ionicons name="time-outline" size={16} color="#6B7280" />
+                        <Text
+                          style={[
+                            styles.dateBtnText,
+                            !heureDebutPromo && styles.dateBtnPlaceholder,
+                          ]}
+                        >
+                          {heureDebutPromo
+                            ? `${String(heureDebutPromo.getHours()).padStart(2, '0')}:${String(heureDebutPromo.getMinutes()).padStart(2, '0')}`
+                            : 'Choisir'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* ⭐ Date + Heure de fin */}
+                  <View style={styles.row}>
+                    <View style={[styles.inputGroup, styles.halfWidth]}>
+                      <Text style={styles.label}>Date fin *</Text>
                       <TouchableOpacity
                         style={styles.dateBtn}
                         onPress={() => setShowPickerFin(true)}
@@ -424,6 +514,26 @@ const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
                         >
                           {dateFinPromo
                             ? dateFinPromo.toLocaleDateString('fr-FR')
+                            : 'Choisir'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={[styles.inputGroup, styles.halfWidth]}>
+                      <Text style={styles.label}>Heure fin *</Text>
+                      <TouchableOpacity
+                        style={styles.dateBtn}
+                        onPress={() => setShowTimePickerFin(true)}
+                      >
+                        <Ionicons name="time-outline" size={16} color="#6B7280" />
+                        <Text
+                          style={[
+                            styles.dateBtnText,
+                            !heureFinPromo && styles.dateBtnPlaceholder,
+                          ]}
+                        >
+                          {heureFinPromo
+                            ? `${String(heureFinPromo.getHours()).padStart(2, '0')}:${String(heureFinPromo.getMinutes()).padStart(2, '0')}`
                             : 'Choisir'}
                         </Text>
                       </TouchableOpacity>
@@ -454,6 +564,35 @@ const nomLabel = mots.produit.charAt(0).toUpperCase() + mots.produit.slice(1);
                         if (Platform.OS === 'android') setShowPickerFin(false);
                         if (event.type === 'dismissed') return;
                         if (selectedDate) setDateFinPromo(selectedDate);
+                      }}
+                    />
+                  )}
+
+                  {showTimePickerDebut && (
+                    <DateTimePicker
+                      value={heureDebutPromo || new Date()}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      is24Hour={true}
+                      onChange={(event, selectedTime) => {
+                        if (Platform.OS === 'android') setShowTimePickerDebut(false);
+                        if (event.type === 'dismissed') return;
+                        if (selectedTime) setHeureDebutPromo(selectedTime);
+                      }}
+                    />
+                  )}
+
+                 
+                  {showTimePickerFin && (
+                    <DateTimePicker
+                      value={heureFinPromo || heureDebutPromo || new Date()}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      is24Hour={true}
+                      onChange={(event, selectedTime) => {
+                        if (Platform.OS === 'android') setShowTimePickerFin(false);
+                        if (event.type === 'dismissed') return;
+                        if (selectedTime) setHeureFinPromo(selectedTime);
                       }}
                     />
                   )}

@@ -1,18 +1,30 @@
 import { Share, Alert } from 'react-native';
 
 
-
 const estEnPromoActive = (produit) => {
   if (produit.prix_promo == null) return false;
   if (!produit.date_debut_promo || !produit.date_fin_promo) return false;
 
   const maintenant = new Date();
+
   const debut = new Date(produit.date_debut_promo);
+  if (produit.heure_debut_promo) {
+    const [h, m] = produit.heure_debut_promo.split(':');
+    debut.setHours(parseInt(h), parseInt(m), 0, 0);
+  } else {
+    debut.setHours(0, 0, 0, 0);
+  }
+
   const fin = new Date(produit.date_fin_promo);
+  if (produit.heure_fin_promo) {
+    const [h, m] = produit.heure_fin_promo.split(':');
+    fin.setHours(parseInt(h), parseInt(m), 59, 999);
+  } else {
+    fin.setHours(23, 59, 59, 999);
+  }
 
   return debut <= maintenant && fin >= maintenant;
 };
-
 
 export const partagerNatif = async (message, titre = 'Partager') => {
   try {

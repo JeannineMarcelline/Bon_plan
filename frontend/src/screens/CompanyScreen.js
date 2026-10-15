@@ -13,6 +13,7 @@ import {
   Modal,
   Platform,
   FlatList,
+  RefreshControl
 } from 'react-native';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
@@ -32,9 +33,7 @@ import {
   messageProduit,
 } from '../lib/shareHelper';
 
-// ============================================================
-// HELPERS & SOUS-COMPOSANTS MÉMOÏSÉS
-// ============================================================
+
 
 function renderStars(n, size = 16) {
   const stars = [];
@@ -51,7 +50,7 @@ function renderStars(n, size = 16) {
   return stars;
 }
 
-// NOUVEAU : distance en km entre deux points GPS
+
 function distanceKm(a, b) {
   const R = 6371;
   const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
@@ -64,8 +63,7 @@ function distanceKm(a, b) {
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-// NOUVEAU : position fiable d'une entreprise (même règle que HomeScreen).
-// GPS absent ou à plus de 30 km du centre de sa ville -> centre-ville.
+
 function positionEntreprise(e) {
   const gps =
     e?.latitude && e?.longitude
@@ -184,14 +182,18 @@ const ProductRow = memo(function ProductRow({
           )}
         </View>
 
-        <Text style={styles.produitDetails} numberOfLines={1}>
+         <Text style={styles.produitDetails} numberOfLines={1}>
           {estComplet
             ? ' Complet à ces dates'
             : enPromo
             ? `Jusqu'au ${new Date(produit.date_fin_promo).toLocaleDateString(
                 'fr-FR',
                 { day: '2-digit', month: 'short' }
-              )}`
+              )}${
+                produit.heure_fin_promo
+                  ? ` à ${produit.heure_fin_promo.slice(0, 5)}`
+                  : ''
+              }`
             : produit.description_pro || `${motsProduit} disponible`}
         </Text>
       </View>
@@ -237,7 +239,6 @@ const AvisItem = memo(function AvisItem({ avis, onSignaler, user }) {
         </View>
         <View style={styles.avisRight}>
           <View style={styles.avisStars}>{renderStars(avis.note, 12)}</View>
-          {/* ⭐ Bouton Signaler (caché si c'est notre propre avis) */}
           {!estMonAvis && (
             <TouchableOpacity
               style={styles.avisSignalerBtn}
@@ -270,18 +271,37 @@ function formatDateFr(date) {
   });
 }
 
+
 function estEnPromoActive(produit) {
+  if (produit.prix_promo == null) return false;
 
-if(produit.prix_promo == null) return false;
-if(!produit.date_debut_promo || !produit.date_fin_promo) return false;
+  if (
+    !produit.date_debut_promo ||
+    !produit.date_fin_promo
+  ) {
+    return false;
+  }
 
-const maintenant = new Date();
-const debut = new Date(produit.date_debut_promo);
-const fin  = new Date(produit.date_fin_promo);
+  const maintenant = Date.now();
 
-return debut <= maintenant && fin >= maintenant;
+  const debut = new Date(
+    produit.date_debut_promo
+  ).getTime();
 
+  const fin = new Date(
+    produit.date_fin_promo
+  ).getTime();
+
+  if (
+    !Number.isFinite(debut) ||
+    !Number.isFinite(fin)
+  ) {
+    return false;
+  }
+
+  return debut <= maintenant && maintenant <= fin;
 }
+
 
 function calcReduction(prixNormal, prixPromo) {
 if(!prixNormal || !prixPromo) return 0;
@@ -309,10 +329,12 @@ export default function CompanyScreen() {
   const [nbAvis, setNbAvis] = useState(0);
   const [produits, setProduits] = useState([]);
   const [loadingProduits, setLoadingProduits] = useState(true);
+
+   const [refreshing, setRefreshing] = useState(false);
   const [estFavori, setEstFavori] = useState(false);
   const [loadingFavori, setLoadingFavori] = useState(false);
 
-  // ⭐ Signalements
+  
 const [modalSignalementVisible, setModalSignalementVisible] = useState(false);
 const [signalementCible, setSignalementCible] = useState(null);
 const [raisonSignalement, setRaisonSignalement] = useState(null);
@@ -361,7 +383,7 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
       const netState = await NetInfo.fetch();
       const cacheKey = `produits_${entrepriseId}`;
 
-      // Hors ligne OU recherche par dates → cache uniquement si pas de dates
+   
       if (!netState.isConnected && !debut && !fin) {
         const cached = await getCache(cacheKey);
         if (cached) setProduits(cached);
@@ -380,13 +402,13 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
       if (error) throw error;
       setProduits(data || []);
 
-      // Cache uniquement si pas de recherche par dates
+      
       if (!debut && !fin) {
         await setCache(cacheKey, data || []);
       }
     } catch (error) {
       console.error('Erreur chargement produits:', error);
-      // Fallback cache
+
       if (!debut && !fin) {
         const cached = await getCache(`produits_${entrepriseId}`);
         if (cached) setProduits(cached);
@@ -401,7 +423,6 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
     try {
       setLoadingTransport(true);
 
-      // 1) Véhicules de l'entreprise
       const { data: veh, error: errVeh } = await supabase
         .from('vehicules')
         .select('*')
@@ -410,11 +431,9 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
       if (errVeh) throw errVeh;
       setVehicules(veh || []);
 
-      // 2) Trajets liés à ces véhicules
       if (veh && veh.length > 0) {
         const idsVehicules = veh.map((v) => v.id_vehicule);
 
-        // Fuseau Madagascar (UTC+3)
         const madaOffsetMs = 3 * 60 * 60 * 1000;
         const maintenantMada = new Date(Date.now() + madaOffsetMs);
         const aujourdhuiMada = maintenantMada.toISOString().split('T')[0];
@@ -429,7 +448,7 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
 
         if (errTrj) throw errTrj;
 
-        // Filtre strict : enlever les trajets d'aujourd'hui déjà partis
+        
         const heureMada = maintenantMada.toISOString().split('T')[1].slice(0, 5);
 
         const trajetsFuturs = (trj || []).filter((t) => {
@@ -447,7 +466,7 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
           if (t.ville_arrivee) setArrivee.add(t.ville_arrivee.trim());
         });
         setVillesDepart(Array.from(setDepart).sort());
-        console.log('=== DEBUG TRANSPORT ===');
+       
         console.log('Total trajets futurs:', trajetsFuturs.length);
         console.log('Villes départ:', Array.from(setDepart));
         console.log('Villes arrivée:', Array.from(setArrivee));
@@ -476,7 +495,7 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
       const netState = await NetInfo.fetch();
       const cacheKey = `avis_${entrepriseId}`;
 
-      // Hors ligne → cache
+    
       if (!netState.isConnected) {
         const cached = await getCache(cacheKey);
         if (cached) {
@@ -516,7 +535,7 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
       await setCache(cacheKey, result);
     } catch (error) {
       console.error('Erreur chargement avis:', error);
-      // Fallback cache
+  
       const cached = await getCache(`avis_${entrepriseId}`);
       if (cached) {
         setAvisList(cached);
@@ -821,9 +840,7 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
     [rechercheFaite, mots.produit, ouvrirModale]
   );
 
-    // ⭐ ============================================================
-  // FAVORIS
-  // ============================================================
+    
   const verifierFavori = useCallback(async () => {
     if (!user) return;
     try {
@@ -883,8 +900,7 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
   }, [user, id, estFavori]);
 
 
-  // ⭐ ============================================================
-  // SIGNALEMENTS
+
   // ============================================================
   const RAISONS_SIGNALEMENT = [
     { key: 'contenu_abusif', label: 'Contenu abusif / insultant' },
@@ -947,6 +963,22 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
   }, [user, raisonSignalement, commentaireSignalement, signalementCible, fermerModalSignalement]);
 
 
+  // ⭐ Recharger les données au pull
+const onRefresh = useCallback(async () => {
+  setRefreshing(true);
+  try {
+    if (entreprise?.id) {
+      await Promise.all([
+        loadProduits(entreprise.id),
+        loadAvis(entreprise.id),
+      ]);
+    }
+  } finally {
+    setRefreshing(false);
+  }
+}, [entreprise?.id, loadProduits, loadAvis]);
+
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -970,12 +1002,20 @@ const [submittingSignalement, setSubmittingSignalement] = useState(false);
         keyExtractor={keyExtractorProduit}
         renderItem={renderProduitItem}
         showsVerticalScrollIndicator={false}
+            refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#2563EB']}
+            tintColor="#2563EB"
+          />
+        }
+
         removeClippedSubviews={Platform.OS === 'android'}
         initialNumToRender={6}
         maxToRenderPerBatch={6}
         windowSize={7}
         updateCellsBatchingPeriod={50}
-
         ListHeaderComponent={
           <>
               <View style={styles.imageContainer}>

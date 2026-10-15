@@ -10,7 +10,8 @@ import {
   StatusBar,
   FlatList,
   Modal,
-  ActivityIndicator
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -35,7 +36,7 @@ function calcReduction(prixNormal, prixPromo) {
   return Math.round((1 - prixPromo / prixNormal) * 100);
 }
 
-// ⭐ Calcul de distance entre 2 points GPS (formule Haversine)
+
 function calculerDistance(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return null;
 
@@ -54,7 +55,7 @@ function calculerDistance(lat1, lon1, lat2, lon2) {
   return R * c; // Distance en km
 }
 
-// ⭐ Formatage de la distance
+
 function formatDistance(km) {
   if (km === null || km === undefined) return '';
   if (km < 1) return `à ${Math.round(km * 1000)} m`;
@@ -222,6 +223,7 @@ const [positionClient, setPositionClient] = useState(null);
 const [loadingPosition, setLoadingPosition] = useState(false);
 const [entreprisesEnPromo, setEntreprisesEnPromo] = useState([]);
 const [prixMinParEntreprise, setPrixMinParEntreprise] = useState({});
+const [refreshing, setRefreshing] = useState(false);
 
 
 const nbFiltresActifs = [
@@ -264,7 +266,7 @@ const filteredEntreprises = entreprises
     );
   })
   .map((item) => {
-    // ⭐ Calculer la distance pour chaque entreprise
+  
     let distance = null;
     if (autourDeMoi && positionClient && item.latitude && item.longitude) {
       distance = calculerDistance(
@@ -277,7 +279,7 @@ const filteredEntreprises = entreprises
     return { ...item, distance };
   })
   .sort((a, b) => {
-    // ⭐ Si "Autour de moi" actif → trier par distance croissante
+   
     if (autourDeMoi) {
       if (a.distance == null) return 1;
       if (b.distance == null) return -1;
@@ -291,7 +293,7 @@ const loadPromos = useCallback(async () => {
   try {
     const netState = await NetInfo.fetch();
 
-    // Hors ligne → cache
+    
     if (!netState.isConnected) {
       const cached = await getCache('promos');
       if (cached) setPromos(cached);
@@ -309,6 +311,8 @@ const loadPromos = useCallback(async () => {
         prix_promo,
         date_fin_promo,
         photos_produit,
+        heure_debut_promo,
+        heure_fin_promo,
         id_entreprise,
         entreprises!inner (
           id,
@@ -509,8 +513,20 @@ useFocusEffect(
   );
 
 
+const onRefresh = useCallback(async () => {
+  setRefreshing(true);
+  try {
+    await Promise.all([
+      loadEntreprises(),
+      loadVilles(),
+      loadCategories(),
+      loadPromos(),
+    ]);
+  } finally {
+    setRefreshing(false);
+  }
+}, []);
 
-    // ⭐ ACTIVER/DÉSACTIVER "Autour de moi"
   const toggleAutourDeMoi = useCallback(async () => {
     if (autourDeMoi) {
       setAutourDeMoi(false);
@@ -563,8 +579,6 @@ useFocusEffect(
       {/* Bandeau hors ligne  */}
       
       <OfflineBanner />
-
-      {/* Header avec logo et barre de recherche */}
       <View style={styles.header}>
         <Image source={require('../../assets/bonPlan.jpg')} style={styles.logo} />
         <View style={styles.searchContainer}>
@@ -793,6 +807,15 @@ useFocusEffect(
             <Text style={styles.emptyText}>Aucune entreprise correspond à votre recherche</Text>
           </View>
         }
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#2563EB']}
+            tintColor="#2563EB"
+          />
+        }
+
         ListHeaderComponent={
           <>
             {promos.length > 0 ? (

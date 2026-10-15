@@ -12,6 +12,7 @@ import {
   TextInput,
   ScrollView,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,15 +23,35 @@ import { getConfigCategorie } from '../../../Config/categorieConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 
+
 function estEnPromoActive(produit) {
   if (produit.prix_promo == null) return false;
-  if (!produit.date_debut_promo || !produit.date_fin_promo) return false;
 
-  const maintenant = new Date();
-  const debut = new Date(produit.date_debut_promo);
-  const fin = new Date(produit.date_fin_promo);
+  if (
+    !produit.date_debut_promo ||
+    !produit.date_fin_promo
+  ) {
+    return false;
+  }
 
-  return debut <= maintenant && fin >= maintenant;
+  const maintenant = Date.now();
+
+  const debut = new Date(
+    produit.date_debut_promo
+  ).getTime();
+
+  const fin = new Date(
+    produit.date_fin_promo
+  ).getTime();
+
+  if (
+    !Number.isFinite(debut) ||
+    !Number.isFinite(fin)
+  ) {
+    return false;
+  }
+
+  return debut <= maintenant && maintenant <= fin;
 }
 
 
@@ -97,7 +118,6 @@ const ProductCard = memo(function ProductCard({
             </Text>
           )}
 
-          {/* Stock discret */}
           <View style={styles.stockRow}>
             <View
               style={[
@@ -114,7 +134,7 @@ const ProductCard = memo(function ProductCard({
         </View>
       </View>
 
-      {/* Actions */}
+
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={styles.actionBtn}
@@ -179,6 +199,12 @@ const [dateFinPromo, setDateFinPromo] = useState(null);
 const [showPickerDebut, setShowPickerDebut] = useState(false);
 const [showPickerFin, setShowPickerFin] = useState(false);
 const [savingPromo, setSavingPromo] = useState(false);
+
+const [heureDebutPromo, setHeureDebutPromo] = useState(null);
+const [heureFinPromo, setHeureFinPromo] = useState(null);
+const [showTimePickerDebut, setShowTimePickerDebut] = useState(false);
+const [showTimePickerFin, setShowTimePickerFin] = useState(false);
+const [refreshing, setRefreshing] = useState(false);
  
 
   const loadProduits = useCallback(async () => {
@@ -222,6 +248,15 @@ const [savingPromo, setSavingPromo] = useState(false);
       loadProduits();
     }, [loadProduits])
   );
+
+  const onRefresh = useCallback(async () => {
+  setRefreshing(true);
+  try {
+    await loadProduits();
+  } finally {
+    setRefreshing(false);
+  }
+}, [loadProduits]);
 
   // ============================================================
   // ACTIONS
@@ -282,7 +317,7 @@ const [savingPromo, setSavingPromo] = useState(false);
     [navigation]
   );
 
-// OUVERTURE MODALE PROMO
+
 const ouvrirModalePromo = useCallback((produit) => {
   setProduitSelectionne(produit);
   if (produit.prix_promo != null) {
@@ -293,10 +328,30 @@ const ouvrirModalePromo = useCallback((produit) => {
     setDateFinPromo(
       produit.date_fin_promo ? new Date(produit.date_fin_promo) : null
     );
+
+    if (produit.heure_debut_promo) {
+      const [h, m] = produit.heure_debut_promo.split(':');
+      const d = new Date();
+      d.setHours(parseInt(h), parseInt(m), 0, 0);
+      setHeureDebutPromo(d);
+    } else {
+      setHeureDebutPromo(null);
+    }
+
+    if (produit.heure_fin_promo) {
+      const [h, m] = produit.heure_fin_promo.split(':');
+      const d = new Date();
+      d.setHours(parseInt(h), parseInt(m), 0, 0);
+      setHeureFinPromo(d);
+    } else {
+      setHeureFinPromo(null);
+    }
   } else {
     setPrixPromo('');
     setDateDebutPromo(null);
     setDateFinPromo(null);
+    setHeureDebutPromo(null);
+    setHeureFinPromo(null);
   }
   setPromoModalVisible(true);
 }, []);
@@ -308,16 +363,18 @@ const fermerModalePromo = useCallback(() => {
   setPrixPromo('');
   setDateDebutPromo(null);
   setDateFinPromo(null);
+  setHeureDebutPromo(null);
+  setHeureFinPromo(null);
 }, []);
 
 
 const sauvegarderPromo = useCallback(async () => {
   if (!produitSelectionne) return;
 
-  if (!prixPromo || !dateDebutPromo || !dateFinPromo) {
+  if (!prixPromo || !dateDebutPromo || !dateFinPromo || !heureDebutPromo || !heureFinPromo) {
     Alert.alert(
       'Promo incomplète',
-      'Renseignez le prix promo, la date de début et la date de fin.'
+      'Renseignez le prix, la date et l\'heure de début, ainsi que la date et l\'heure de fin.'
     );
     return;
   }
@@ -330,22 +387,67 @@ const sauvegarderPromo = useCallback(async () => {
     return;
   }
 
-  if (dateFinPromo <= dateDebutPromo) {
+ 
+  const debutComplet = new Date(dateDebutPromo);
+  debutComplet.setHours(heureDebutPromo.getHours(), heureDebutPromo.getMinutes(), 0, 0);
+
+  const finComplet = new Date(dateFinPromo);
+  finComplet.setHours(heureFinPromo.getHours(), heureFinPromo.getMinutes(), 0, 0);
+
+  if (finComplet <= debutComplet) {
     Alert.alert(
       'Dates incohérentes',
-      'La date de fin doit être après la date de début.'
+      `La fin (${finComplet.toLocaleString('fr-FR')}) doit être après le début (${debutComplet.toLocaleString('fr-FR')}).`
     );
     return;
   }
 
-  setSavingPromo(true);
+
+  const dureeH = (finComplet - debutComplet) / (1000 * 60 * 60);
+  if (dureeH < 1) {
+    Alert.alert(
+      'Durée trop courte',
+      'La promotion doit durer au moins 1 heure.'
+    );
+    return;
+  }
+
+ 
+  if (debutComplet < new Date()) {
+    Alert.alert(
+      'Date invalide',
+      'La promotion ne peut pas commencer dans le passé.'
+    );
+    return;
+  }
+
+    setSavingPromo(true);
   try {
+
+    const dateDebutComplete = new Date(dateDebutPromo);
+    dateDebutComplete.setHours(
+      heureDebutPromo.getHours(),
+      heureDebutPromo.getMinutes(),
+      0,
+      0
+    );
+
+    const dateFinComplete = new Date(dateFinPromo);
+    dateFinComplete.setHours(
+      heureFinPromo.getHours(),
+      heureFinPromo.getMinutes(),
+      0,
+      0
+    );
+
     const { error } = await supabase
       .from('produits')
       .update({
         prix_promo: parseFloat(prixPromo),
-        date_debut_promo: dateDebutPromo.toISOString(),
-        date_fin_promo: dateFinPromo.toISOString(),
+        date_debut_promo: dateDebutComplete.toISOString(),
+        date_fin_promo: dateFinComplete.toISOString(),
+        heure_debut_promo: `${String(heureDebutPromo.getHours()).padStart(2, '0')}:${String(heureDebutPromo.getMinutes()).padStart(2, '0')}:00`,
+        heure_fin_promo: `${String(heureFinPromo.getHours()).padStart(2, '0')}:${String(heureFinPromo.getMinutes()).padStart(2, '0')}:00`,
       })
       .eq('id', produitSelectionne.id);
 
@@ -360,7 +462,7 @@ const sauvegarderPromo = useCallback(async () => {
   } finally {
     setSavingPromo(false);
   }
-}, [produitSelectionne, prixPromo, dateDebutPromo, dateFinPromo, loadProduits, fermerModalePromo]);
+}, [produitSelectionne, prixPromo, dateDebutPromo, dateFinPromo, heureDebutPromo, heureFinPromo, loadProduits, fermerModalePromo]);
 
 
 const retirerPromo = useCallback(async () => {
@@ -383,6 +485,8 @@ const retirerPromo = useCallback(async () => {
                 prix_promo: null,
                 date_debut_promo: null,
                 date_fin_promo: null,
+                heure_debut_promo: null,
+                heure_fin_promo: null,
               })
               .eq('id', produitSelectionne.id);
 
@@ -466,7 +570,14 @@ const retirerPromo = useCallback(async () => {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
-          // Optimisations de la liste
+             refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#2563EB']}
+              tintColor="#2563EB"
+            />
+          }
           removeClippedSubviews={true}
           initialNumToRender={8}
           maxToRenderPerBatch={8}
@@ -533,10 +644,10 @@ const retirerPromo = useCallback(async () => {
                       </View>
                     )}
                   </View>
-
+                 
                   <View style={styles.modalRow}>
                     <View style={styles.modalHalf}>
-                      <Text style={styles.modalLabel}>Du *</Text>
+                      <Text style={styles.modalLabel}>Date début *</Text>
                       <TouchableOpacity
                         style={styles.modalDateBtn}
                         onPress={() => setShowPickerDebut(true)}
@@ -557,7 +668,31 @@ const retirerPromo = useCallback(async () => {
                     </View>
 
                     <View style={styles.modalHalf}>
-                      <Text style={styles.modalLabel}>Au *</Text>
+                      <Text style={styles.modalLabel}>Heure début *</Text>
+                      <TouchableOpacity
+                        style={styles.modalDateBtn}
+                        onPress={() => setShowTimePickerDebut(true)}
+                      >
+                        <Ionicons name="time-outline" size={14} color="#6B7280" />
+                        <Text
+                          style={[
+                            styles.modalDateText,
+                            !heureDebutPromo && styles.modalDatePlaceholder,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {heureDebutPromo
+                            ? `${String(heureDebutPromo.getHours()).padStart(2, '0')}:${String(heureDebutPromo.getMinutes()).padStart(2, '0')}`
+                            : 'Choisir'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                 
+                  <View style={styles.modalRow}>
+                    <View style={styles.modalHalf}>
+                      <Text style={styles.modalLabel}>Date fin *</Text>
                       <TouchableOpacity
                         style={styles.modalDateBtn}
                         onPress={() => setShowPickerFin(true)}
@@ -572,6 +707,27 @@ const retirerPromo = useCallback(async () => {
                         >
                           {dateFinPromo
                             ? dateFinPromo.toLocaleDateString('fr-FR')
+                            : 'Choisir'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.modalHalf}>
+                      <Text style={styles.modalLabel}>Heure fin *</Text>
+                      <TouchableOpacity
+                        style={styles.modalDateBtn}
+                        onPress={() => setShowTimePickerFin(true)}
+                      >
+                        <Ionicons name="time-outline" size={14} color="#6B7280" />
+                        <Text
+                          style={[
+                            styles.modalDateText,
+                            !heureFinPromo && styles.modalDatePlaceholder,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {heureFinPromo
+                            ? `${String(heureFinPromo.getHours()).padStart(2, '0')}:${String(heureFinPromo.getMinutes()).padStart(2, '0')}`
                             : 'Choisir'}
                         </Text>
                       </TouchableOpacity>
@@ -592,7 +748,7 @@ const retirerPromo = useCallback(async () => {
                     />
                   )}
 
-                  {showPickerFin && (
+                    {showPickerFin && (
                     <DateTimePicker
                       value={dateFinPromo || dateDebutPromo || new Date()}
                       mode="date"
@@ -602,6 +758,36 @@ const retirerPromo = useCallback(async () => {
                         if (Platform.OS === 'android') setShowPickerFin(false);
                         if (event.type === 'dismissed') return;
                         if (selectedDate) setDateFinPromo(selectedDate);
+                      }}
+                    />
+                  )}
+
+            
+                  {showTimePickerDebut && (
+                    <DateTimePicker
+                      value={heureDebutPromo || new Date()}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      is24Hour={true}
+                      onChange={(event, selectedTime) => {
+                        if (Platform.OS === 'android') setShowTimePickerDebut(false);
+                        if (event.type === 'dismissed') return;
+                        if (selectedTime) setHeureDebutPromo(selectedTime);
+                      }}
+                    />
+                  )}
+
+                 
+                  {showTimePickerFin && (
+                    <DateTimePicker
+                      value={heureFinPromo || heureDebutPromo || new Date()}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      is24Hour={true}
+                      onChange={(event, selectedTime) => {
+                        if (Platform.OS === 'android') setShowTimePickerFin(false);
+                        if (event.type === 'dismissed') return;
+                        if (selectedTime) setHeureFinPromo(selectedTime);
                       }}
                     />
                   )}
